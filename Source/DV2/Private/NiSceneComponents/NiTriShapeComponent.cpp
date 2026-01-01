@@ -1,0 +1,106 @@
+﻿// Fill out your copyright notice in the Description page of Project Settings.
+
+
+#include "NiSceneComponents/NiTriShapeComponent.h"
+
+#include "NetImmerse.h"
+#include "ProceduralMeshComponent.h"
+#include "DV2Importer/DV2Settings.h"
+#include "NiMeta/NiTools.h"
+
+TSharedPtr<NiMeta::niobject> UNiTriShapeComponent::GetTargetBlockType() const
+{
+	return NiMeta::GetNiObject("NiTriShape");
+}
+
+bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneSpawnConfiguratorContext& Ctx)
+{
+	auto MeshComponent = NewObject<UProceduralMeshComponent>(Ctx.WCO);
+	Ctx.AttachComponent(MeshComponent);
+
+	auto Data = Ctx.Block->GetField("Data").SingleReference().Resolve(File);
+	if (!Data.IsValid() || !Data->Error.IsEmpty())
+		return true;
+
+	auto VerticesField = Data->GetField("Vertices");
+	auto NormalsField = Data->FindField("Normals");
+	auto UVsField = Data->FindField("UV Sets");
+	auto TrianglesField = Data->GetField("Triangles");
+
+	TArray<FVector> Vertices;
+	TArray<FVector> Normals;
+	TArray<FVector2D> UVs;
+	TArray<int32> Triangles;
+
+	Vertices.Reserve(VerticesField.Size);
+	for (uint32 i = 0; i < VerticesField.Size; i++)
+	{
+		Vertices.Add(NiTools::ReadVector3(VerticesField, i));
+	}
+
+	if (NormalsField)
+	{
+		Normals.Reserve(NormalsField->Size);
+		for (uint32 i = 0; i < NormalsField->Size; i++)
+		{
+			Normals.Add(NiTools::ReadVector3(*NormalsField, i));
+		}
+	}
+
+	if (UVsField)
+	{
+		UVs.Reserve(UVsField->Size);
+		for (uint32 i = 0; i < UVsField->Size; i++)
+		{
+			UVs.Add(NiTools::ReadUV(*UVsField, i));
+		}
+	}
+
+	Triangles.Reserve(TrianglesField.Size);
+	for (uint32 i = 0; i < TrianglesField.Size; i++)
+	{
+		const auto& obj = *TrianglesField.GroupAt(i);
+		uint32 v1 = obj.GetField("v1").SingleNumber<uint32>();
+		uint32 v2 = obj.GetField("v2").SingleNumber<uint32>();
+		uint32 v3 = obj.GetField("v3").SingleNumber<uint32>();
+		Triangles.Add(v3);
+		Triangles.Add(v2);
+		Triangles.Add(v1);
+	}
+
+	MeshComponent->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, {}, {}, true);
+	MeshComponent->UpdateBounds();
+
+	auto MaterialProperty = Ctx.Block->FindBlockByType(NiMeta::GetNiObject("NiMaterialProperty"));
+	if (MaterialProperty.IsValid() && MaterialProperty->Error.IsEmpty())
+	{
+		FColor DiffuseColor = NiTools::ReadColorFloat(MaterialProperty->GetField("Diffuse Color"));
+		FColor EmissiveColor = NiTools::ReadColorFloat(MaterialProperty->GetField("Emissive Color"));
+		float Glossiness = MaterialProperty->GetField("Glossiness").SingleNumber<float>();
+
+		if (auto BaseMaterial = GetDefault<UDV2Settings>()->BaseMaterial.LoadSynchronous())
+		{
+			auto BaseMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, Ctx.WCO);
+
+			BaseMaterialInstance->SetVectorParameterValue("Diffuse Color", DiffuseColor);
+			BaseMaterialInstance->SetVectorParameterValue("Emissive Color", EmissiveColor);
+			BaseMaterialInstance->SetScalarParameterValue("Glossiness", Glossiness);
+
+			auto TextureProperty = Ctx.Block->FindBlockByType(NiMeta::GetNiObject("NiTexturingProperty"));
+			if (TextureProperty.IsValid() && TextureProperty->Error.IsEmpty())
+			{
+				bool HasBaseTexture = TextureProperty->GetField("Has Base Texture").SingleNumber<bool>();
+				if (HasBaseTexture)
+				{
+					auto TextureSourceIndex = TextureProperty->GetField("Base Texture").SingleGroup()->GetField("Source").SingleReference().Index;
+					auto Texture = UNetImmerse::LoadNiTexture(File.Path, TextureSourceIndex, true);
+					BaseMaterialInstance->SetTextureParameterValue("Diffuse Texture", Texture);
+				}
+			}
+		
+			MeshComponent->SetMaterial(0, BaseMaterialInstance);	
+		}
+	}
+
+	return true;
+}
