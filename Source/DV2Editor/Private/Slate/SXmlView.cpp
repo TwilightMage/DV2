@@ -1,5 +1,6 @@
 ﻿#include "Slate/SXmlView.h"
 
+#include "TextUtils.h"
 #include "NiMeta/CStreamableNode.h"
 
 void SXmlView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
@@ -20,8 +21,13 @@ void SXmlView::OnConstructView(const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 
 	Block = StaticCastSharedPtr<FNiBlock_CStreamableNode>(File->Blocks[0]);
 
-	if (!ensureAlways(Block->UniqueParameterTypes.Num() <= 20))
-		return;
+	if (Block->UniqueParameterTypes.Num() > 20)
+		if (FMessageDialog::Open(
+			EAppMsgType::YesNo,
+			FORMAT_TEXT("SXmlView", "This tree contains {0} unique properties, are you sure you want to proceed?", Block->UniqueParameterTypes.Num()),
+			MAKE_TEXT("SXmlView", "Too many properties")
+			) != EAppReturnType::Yes)
+			return;
 
 	TSharedRef<SHeaderRow> HeaderRow = SNew(SHeaderRow)
 		+ SHeaderRow::Column("NameColumn")
@@ -83,7 +89,7 @@ TSharedRef<SWidget> SXmlViewTableRow::GenerateWidgetForColumn(const FName& InCol
 		for (const auto& Property : Target->Data.Properties)
 		{
 			if (Property.Type == Type)
-				return SNew(STextBlock)
+			return SNew(STextBlock)
 					.Text(FText::FromString(Property.Value));
 		}
 	}

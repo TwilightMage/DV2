@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 
+class FPinFactory;
 class FDV2Browser;
 
 class FDV2EditorModule : public IModuleInterface
@@ -13,6 +14,7 @@ public:
 	static FDV2EditorModule& Get();
 
 	TSharedPtr<FUICommandList> Commands;
+	TSharedPtr<FPinFactory> PinFactory;
 	TSharedPtr<FDV2Browser> DV2Browser;
 	FDelegateHandle DV2MenuExtenderHandle;
 

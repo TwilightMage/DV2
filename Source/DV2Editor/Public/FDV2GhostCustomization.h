@@ -2,7 +2,7 @@
 #include "DV2Ghost.h"
 #include "IDetailCustomization.h"
 
-class ADV2Ghost;
+class ADV2GhostActor;
 struct FDV2AssetTreeEntry;
 struct FNiFile;
 
@@ -16,7 +16,7 @@ public:
 
 	virtual void Apply(UObject* Object) override
 	{
-		if (ADV2Ghost* Ghost = Cast<ADV2Ghost>(Object))
+		if (UDV2GhostComponent* Ghost = Cast<UDV2GhostComponent>(Object))
 		{
 			Ghost->SetFile(NewFile);
 		}
@@ -24,7 +24,7 @@ public:
 
 	virtual void Revert(UObject* Object) override
 	{
-		if (ADV2Ghost* Ghost = Cast<ADV2Ghost>(Object))
+		if (UDV2GhostComponent* Ghost = Cast<UDV2GhostComponent>(Object))
 		{
 			Ghost->SetFile(OldFile);
 		}
@@ -48,10 +48,8 @@ public:
 	virtual void CustomizeDetails(IDetailLayoutBuilder& DetailBuilder) override;
 
 private:
-	void Refresh();
 	void SetFile(const FString& NewPath);
+	FText GetNiPathTitle() const;
 
-	ADV2Ghost* Target;
-	TSharedPtr<SMenuAnchor> MenuAnchor;
-	TSharedPtr<SEditableTextBox> PathDisplay;
+	UDV2GhostComponent* Target;
 };

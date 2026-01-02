@@ -10,6 +10,7 @@ public class DV2Editor : ModuleRules
             new string[]
             {
                 "Core",
+                "UnrealEd",
             }
         );
 
@@ -18,13 +19,14 @@ public class DV2Editor : ModuleRules
             {
                 "CoreUObject",
                 "Engine",
-                "UnrealEd",
                 "Slate",
                 "SlateCore",
                 "DV2",
                 "ToolMenus",
                 "InputCore",
                 "Projects",
+                "GraphEditor",
+                "BlueprintGraph",
             }
         );
     }

@@ -20,13 +20,11 @@ void FDV2GhostCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailBuilde
 
 	if (ObjectsBeingCustomized.Num() > 0 && ObjectsBeingCustomized[0].IsValid())
 	{
-		Target = Cast<ADV2Ghost>(ObjectsBeingCustomized[0].Get());
+		Target = Cast<UDV2GhostComponent>(ObjectsBeingCustomized[0].Get());
 	}
 
 	if (!Target)
 		return;
-
-	Target->OnFileChanged.AddSP(this, &FDV2GhostCustomization::Refresh);
 
 	Category.AddCustomRow(FText::FromString("NI File"))
 	        .NameContent()
@@ -36,29 +34,11 @@ void FDV2GhostCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailBuilde
 		.ValueContent()
 		.HAlign(HAlign_Fill)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.FillWidth(1)
-			.Padding(0, 0, 5, 0)
-			[
-				SAssignNew(PathDisplay, SEditableTextBox)
-				.IsReadOnly(true)
-				.Text(FText::FromString(Target->File.IsValid()
-					? Target->File->Path
-					: "None"))
-				.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
-				.ToolTipText(FText::FromString(Target->File.IsValid()
-					? Target->File->Path
-					: "None"))
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SAssignNew(MenuAnchor, SMenuAnchor)
-				.MenuContent(
-					SNew(SBox)
-					.WidthOverride(250)
-					.HeightOverride(300)
+			SNew(SComboButton)
+			.OnGetMenuContent_Lambda([this]() -> TSharedRef<SWidget>
+			{
+				return SNew(SBox)
+					.WidthOverride(280)
 					[
 						SNew(SDV2Explorer)
 						.OnSelectionChanged_Lambda([this](const TSharedPtr<FDV2AssetTreeEntry>& Selection)
@@ -68,32 +48,16 @@ void FDV2GhostCustomization::CustomizeDetails(IDetailLayoutBuilder& DetailBuilde
 								SetFile(Selection->GetAssetReference().GetFilePath());
 							}
 						})
-					]
-					)
-				[
-					SNew(SButton)
-					.OnClicked_Lambda([this]()
-					{
-						MenuAnchor->SetIsOpen(true);
-						return FReply::Handled();
-					})
-					[
-						SNew(STextBlock)
-						.Text(FText::FromString("..."))
-					]
-				]
+					];
+			})
+			.ToolTipText(this, &FDV2GhostCustomization::GetNiPathTitle)
+			.ButtonContent()
+			[
+				SNew(STextBlock)
+				.Text(this, &FDV2GhostCustomization::GetNiPathTitle)
+				.Font(FAppStyle::GetFontStyle("PropertyWindow.NormalFont"))
 			]
 		];
-}
-
-void FDV2GhostCustomization::Refresh()
-{
-	FString NewPath = Target->File.IsValid()
-		? Target->File->Path
-		: "None";
-
-	PathDisplay->SetText(FText::FromString(NewPath));
-	PathDisplay->SetToolTipText(FText::FromString(NewPath));
 }
 
 void FDV2GhostCustomization::SetFile(const FString& NewPath)
@@ -111,4 +75,9 @@ void FDV2GhostCustomization::SetFile(const FString& NewPath)
 		GUndo->StoreUndo(Target, MoveTemp(Change));
 
 	Target->SetFile(NewPath);
+}
+
+FText FDV2GhostCustomization::GetNiPathTitle() const
+{
+	return FText::FromString(Target->File.IsValid() ? Target->File->Path : "None");
 }

@@ -5,15 +5,7 @@
 #include "Divinity2Assets.h"
 #include "NetImmerse.h"
 
-ADV2Ghost::ADV2Ghost()
-{
-	SceneRoot = CreateDefaultSubobject<USceneComponent>("Scene Root");
-	SetRootComponent(SceneRoot);
-
-	PrimaryActorTick.bCanEverTick = false;
-}
-
-void ADV2Ghost::SetFile(const FString& InFilePath)
+void UDV2GhostComponent::SetFile(const FString& InFilePath)
 {
 	FString FixedFilePath = FixPath(InFilePath);
 	
@@ -26,7 +18,7 @@ void ADV2Ghost::SetFile(const FString& InFilePath)
 	OnFileChanged.Broadcast();
 }
 
-FString ADV2Ghost::GetFilePath() const
+FString UDV2GhostComponent::GetFilePath() const
 {
 	if (File.IsValid())
 		return File->Path;
@@ -34,20 +26,27 @@ FString ADV2Ghost::GetFilePath() const
 }
 
 #if WITH_EDITOR
-void ADV2Ghost::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
+void UDV2GhostComponent::PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent)
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	if (PropertyChangedEvent.Property->GetName() == GET_MEMBER_NAME_CHECKED(ADV2Ghost, FilePath))
+	if (PropertyChangedEvent.Property->GetName() == GET_MEMBER_NAME_CHECKED(UDV2GhostComponent, FilePath))
 	{
 		SetFilePrivate(FilePath);
 	}
 }
 #endif
 
+void UDV2GhostComponent::PostLoad()
+{
+	Super::PostLoad();
+	
+	SetFilePrivate(FilePath);
+}
+
 struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 {
-	ADV2Ghost* Ghost;
+	UDV2GhostComponent* Ghost;
 
 	struct HierarchyNode
 	{
@@ -59,7 +58,6 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 
 	TSharedPtr<HierarchyNode> RootNode;
 	TMap<TSharedPtr<FNiBlock>, TSharedPtr<HierarchyNode>> BlockToNodeMap;
-	USceneComponent* Component;
 
 	struct
 	{
@@ -136,7 +134,7 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 	}
 };
 
-void ADV2Ghost::AddFileSubComponents()
+void UDV2GhostComponent::AddFileSubComponents()
 {
 	if (!File.IsValid())
 		return;
@@ -144,20 +142,19 @@ void ADV2Ghost::AddFileSubComponents()
 	FSceneSpawnHandler Handler;
 	Handler.Ghost = this;
 	Handler.BlockToNodeMap.Reserve(File->Blocks.Num());
-	Handler.Component = SceneRoot;
 
 	File->SpawnScene(&Handler);
 	Handler.CalculateTransforms([&](USceneComponent* SubComponent)
 	{
 		SubComponent->RegisterComponent();
-		SubComponent->AttachToComponent(SceneRoot, FAttachmentTransformRules::KeepRelativeTransform);
+		SubComponent->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
 	});
 }
 
-void ADV2Ghost::ClearFileSubComponents()
+void UDV2GhostComponent::ClearFileSubComponents()
 {
 	TArray<USceneComponent*> SubComponents;
-	SceneRoot->GetChildrenComponents(true, SubComponents);
+	GetChildrenComponents(true, SubComponents);
 	for (USceneComponent* SubComponent : SubComponents)
 	{
 		if (!SubComponent)
@@ -167,7 +164,7 @@ void ADV2Ghost::ClearFileSubComponents()
 	}
 }
 
-void ADV2Ghost::SetFilePrivate(const FString& InFilePath)
+void UDV2GhostComponent::SetFilePrivate(const FString& InFilePath)
 {
 	ClearFileSubComponents();
 
@@ -176,4 +173,10 @@ void ADV2Ghost::SetFilePrivate(const FString& InFilePath)
 		return;
 	
 	AddFileSubComponents();
+}
+
+ADV2GhostActor::ADV2GhostActor()
+{
+	Component = CreateDefaultSubobject<UDV2GhostComponent>("Ghost Component");
+	SetRootComponent(Component);
 }

@@ -39,8 +39,7 @@ void UDivinity2Assets::ReloadAssets()
 	auto token = AssetLoadCTS;
 	Async(EAsyncExecution::ThreadPool, [token]()
 	{
-		AssetLoadMutex.Lock();
-
+		FMutexHandle MH;
 		FileMap.Reset();
 
 		if (!token->IsCanceled())
@@ -76,8 +75,6 @@ void UDivinity2Assets::ReloadAssets()
 				OnAssetsReloaded().Broadcast();
 			});
 		}
-
-		AssetLoadMutex.Unlock();
 	});
 }
 
@@ -88,6 +85,7 @@ TSharedPtr<FDV2AssetTreeEntry> UDivinity2Assets::GetAssetEntryFromPath(const FSt
 	TArray<FString> Bits;
 	ValidPath.ParseIntoArray(Bits, TEXT("/"));
 
+	FMutexHandle MH;
 	TSharedPtr<FDV2AssetTreeEntry> Cur = RootDir;
 	for (const auto& Bit : Bits)
 	{
@@ -97,7 +95,7 @@ TSharedPtr<FDV2AssetTreeEntry> UDivinity2Assets::GetAssetEntryFromPath(const FSt
 
 		Cur = Next;
 	}
-
+	
 	return Cur;
 }
 

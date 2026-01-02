@@ -12,20 +12,18 @@ struct FNiFile;
 /**
  * Use this actor to spawn NIF scenes UE world
  */
-UCLASS(DisplayName="DV2 Ghost")
-class DV2_API ADV2Ghost : public AActor, public ILandscapeEditLayerRenderer
+UCLASS(DisplayName="DV2 Ghost Component")
+class DV2_API UDV2GhostComponent : public USceneComponent
 {
 	GENERATED_BODY()
 
 	friend class FDV2GhostCustomization;
-
+	
 public:
 	DECLARE_MULTICAST_DELEGATE(FOnFileChanged);
-	
-	ADV2Ghost();
 
 	UFUNCTION(BlueprintCallable)
-	void SetFile(const FString& InFilePath);
+	void SetFile(UPARAM(meta=(DV2AssetPath)) const FString& InFilePath);
 
 	UFUNCTION(BlueprintPure)
 	FString GetFilePath() const;
@@ -36,7 +34,9 @@ public:
 
 	FOnFileChanged OnFileChanged;
 
-protected:
+private:
+	virtual void PostLoad() override;
+	
 	void AddFileSubComponents();
 	void ClearFileSubComponents();
 	void SetFilePrivate(const FString& InFilePath);
@@ -44,7 +44,19 @@ protected:
 	UPROPERTY()
 	FString FilePath;
 	TSharedPtr<FNiFile> File;
+};
 
-	UPROPERTY()
-	USceneComponent* SceneRoot;
+UCLASS(DisplayName="DV2 Ghost Actor", ConversionRoot, ComponentWrapperClass)
+class DV2_API ADV2GhostActor : public AActor, public ILandscapeEditLayerRenderer
+{
+	GENERATED_BODY()
+
+public:
+	ADV2GhostActor();
+	
+	UDV2GhostComponent* GetGhostComponent() const { return Component; }
+
+private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=DV2GhostActor, meta=(AllowPrivateAccess))
+	UDV2GhostComponent* Component;
 };

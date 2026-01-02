@@ -2,11 +2,12 @@
 
 #include "DV2Browser.h"
 #include "DV2EditorCommands.h"
-#include "DV2Style.h"
-#include "NiMeta/NiMeta.h"
 #include "DV2Ghost.h"
+#include "DV2Style.h"
 #include "Divinity2Assets.h"
 #include "FDV2GhostCustomization.h"
+#include "PinFactory.h"
+#include "NiMeta/NiMeta.h"
 
 #define LOCTEXT_NAMESPACE "FDV2EditorModule"
 
@@ -39,6 +40,9 @@ void FDV2EditorModule::StartupModule()
 
 	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FDV2EditorModule::RegisterMenus));
 
+	PinFactory = MakeShared<FPinFactory>();
+	FEdGraphUtilities::RegisterVisualPinFactory(PinFactory);
+	
 	DV2Browser = MakeShared<FDV2Browser>();
 	DV2Browser->Init();
 	
@@ -56,8 +60,9 @@ void FDV2EditorModule::StartupModule()
 void FDV2EditorModule::ShutdownModule()
 {
 	UToolMenus::UnRegisterStartupCallback(this);
-
 	UToolMenus::UnregisterOwner(this);
+
+	FEdGraphUtilities::UnregisterVisualPinFactory(PinFactory);
 
 	FDV2EditorCommands::Unregister();
 
@@ -106,7 +111,7 @@ void FDV2EditorModule::RegisterPropertyCustomizations()
 	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
     
 	PropertyModule.RegisterCustomClassLayout(
-		ADV2Ghost::StaticClass()->GetFName(),
+		UDV2GhostComponent::StaticClass()->GetFName(),
 		FOnGetDetailCustomizationInstance::CreateStatic(&FDV2GhostCustomization::MakeInstance)
 	);
 }
@@ -116,7 +121,7 @@ void FDV2EditorModule::UnregisterPropertyCustomizations()
 	if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
 	{
 		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
-		PropertyModule.UnregisterCustomClassLayout(ADV2Ghost::StaticClass()->GetFName());
+		PropertyModule.UnregisterCustomClassLayout(UDV2GhostComponent::StaticClass()->GetFName());
 	}
 }
 

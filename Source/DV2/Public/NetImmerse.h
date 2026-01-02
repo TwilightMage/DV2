@@ -430,12 +430,11 @@ class DV2_API UNetImmerse : public UObject
 
 public:
 	UFUNCTION(BlueprintCallable, DisplayName="Open Ni File", Category="Divinity 2|Net Immerse")
-	static UNiFileHandle* OpenNiFile_K2(const FString& Path, bool bForceLoad);
+	static UNiFileHandle* OpenNiFile_K2(UPARAM(meta=(DV2AssetPath)) const FString& Path, bool bForceLoad);
 	static TSharedPtr<FNiFile> OpenNiFile(const FString& Path, bool bForceLoad);
 	static TSharedPtr<FNiFile> OpenNiFile(const TSharedPtr<FDV2AssetTreeEntry>& AssetEntry, bool bForceLoad);
 
-	UFUNCTION(BlueprintCallable, Category="Divinity 2|Net Immerse")
-	static UTexture2D* LoadNiTexture(const FString& FilePath, int32 BlockIndex, bool ForceLoadFile);
+	static UTexture2D* LoadNiTexture(UPARAM(meta=(DV2AssetPath)) const FString& FilePath, int32 BlockIndex, bool ForceLoadFile);
 
 private:
 	inline static TMap<FString, TWeakPtr<FNiFile>> LoadedNiFiles;

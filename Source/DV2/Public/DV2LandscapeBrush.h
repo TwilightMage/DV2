@@ -6,7 +6,7 @@
 #include "LandscapeEditLayer.h"
 #include "DV2LandscapeBrush.generated.h"
 
-class ADV2Ghost;
+class ADV2GhostActor;
 
 UCLASS(DisplayName="DV2 Landscape Brush")
 class DV2_API UDV2LandscapeBrush : public ULandscapeEditLayerProcedural
@@ -17,7 +17,7 @@ public:
 	UDV2LandscapeBrush();
 	
 	UPROPERTY(EditAnywhere)
-	TArray<ADV2Ghost*> UsedActors;
+	TArray<ADV2GhostActor*> UsedActors;
 
 private:
 	UPROPERTY()
