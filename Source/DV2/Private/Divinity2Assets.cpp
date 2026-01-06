@@ -62,7 +62,9 @@ void UDivinity2Assets::ReloadAssets()
 							e->File = file;
 							e->AssetIndex = i++;
 							e->Name = ref.name;
-							MkDirVirtual(ref.dir)->Children.Add(ref.name, e);
+							auto dir = MkDirVirtual(ref.dir);
+							dir->Children.Add(ref.name, e);
+							e->Parent = dir;
 						}
 					}
 				}
@@ -95,7 +97,7 @@ TSharedPtr<FDV2AssetTreeEntry> UDivinity2Assets::GetAssetEntryFromPath(const FSt
 
 		Cur = Next;
 	}
-	
+
 	return Cur;
 }
 
@@ -108,6 +110,62 @@ TMulticastDelegate<void()>& UDivinity2Assets::OnAssetsReloaded()
 {
 	static TMulticastDelegate<void()> Event;
 	return Event;
+}
+
+bool UDivinity2Assets::PathExists(const FString& Path)
+{
+	return GetAssetEntryFromPath(Path).IsValid();
+}
+
+TArray<FString> UDivinity2Assets::GetPathChildren(const FString& Path)
+{
+	if (auto Entry = GetAssetEntryFromPath(Path))
+	{
+		TArray<FString> Result;
+		Entry->Children.GenerateKeyArray(Result);
+
+		return Result;
+	}
+
+	return {};
+}
+
+TArray<FString> UDivinity2Assets::GetPathDirs(const FString& Path)
+{
+	if (auto Entry = GetAssetEntryFromPath(Path))
+	{
+		TArray<FString> Result;
+		for (const auto& Child : Entry->Children)
+		{
+			if (!Child.Value->IsFile())
+				Result.Add(Child.Value->Name);
+		}
+
+		return Result;
+	}
+
+	return {};
+}
+
+TArray<FString> UDivinity2Assets::GetPathFiles(const FString& Path, const FString& Extension)
+{
+	if (auto Entry = GetAssetEntryFromPath(Path))
+	{
+		FString ExtensionFilter = "." + Extension;
+		TArray<FString> Result;
+		for (const auto& Child : Entry->Children)
+		{
+			if (Child.Value->IsFile())
+			{
+				if (Extension.IsEmpty() || Child.Value->Name.EndsWith(ExtensionFilter))
+					Result.Add(Child.Value->Name);
+			}
+		}
+
+		return Result;
+	}
+
+	return {};
 }
 
 TSharedPtr<FDV2AssetTreeEntry> UDivinity2Assets::MkDirVirtual(const FString& path)
@@ -130,6 +188,7 @@ TSharedPtr<FDV2AssetTreeEntry> UDivinity2Assets::MkDirVirtual(const FString& pat
 		{
 			next = MakeShared<FDV2AssetTreeEntry>();
 			next->Name = directory;
+			next->Parent = cur;
 		}
 		cur = next;
 	}

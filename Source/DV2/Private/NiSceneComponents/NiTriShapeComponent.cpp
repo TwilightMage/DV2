@@ -29,7 +29,7 @@ bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneS
 
 	TArray<FVector> Vertices;
 	TArray<FVector> Normals;
-	TArray<FVector2D> UVs;
+	TArray<FVector2D> UVs[4];
 	TArray<int32> Triangles;
 
 	Vertices.Reserve(VerticesField.Size);
@@ -49,10 +49,16 @@ bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneS
 
 	if (UVsField)
 	{
-		UVs.Reserve(UVsField->Size);
-		for (uint32 i = 0; i < UVsField->Size; i++)
+		uint32 NumUVSets = FMath::Min((uint32)4, Data->GetField("Num UV Sets").SingleNumber<uint32>());
+		uint32 NumUVs = Vertices.Num();
+		
+		for (uint32 i = 0; i < NumUVSets; i++)
 		{
-			UVs.Add(NiTools::ReadUV(*UVsField, i));
+			UVs[i].Reserve(NumUVs);
+			for (uint32 j = 0; j < NumUVs; j++)
+			{
+				UVs[i].Add(NiTools::ReadUV(*UVsField, i * NumUVs + j));
+			}
 		}
 	}
 
@@ -68,7 +74,7 @@ bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneS
 		Triangles.Add(v1);
 	}
 
-	MeshComponent->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, {}, {}, true);
+	MeshComponent->CreateMeshSection(0, Vertices, Triangles, Normals, UVs[0], UVs[1], UVs[2], UVs[2], {}, {}, true);
 	MeshComponent->UpdateBounds();
 
 	auto MaterialProperty = Ctx.Block->FindBlockByType(NiMeta::GetNiObject("NiMaterialProperty"));
@@ -89,12 +95,25 @@ bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneS
 			auto TextureProperty = Ctx.Block->FindBlockByType(NiMeta::GetNiObject("NiTexturingProperty"));
 			if (TextureProperty.IsValid() && TextureProperty->Error.IsEmpty())
 			{
-				bool HasBaseTexture = TextureProperty->GetField("Has Base Texture").SingleNumber<bool>();
-				if (HasBaseTexture)
+				if (auto TextureField = TextureProperty->FindField("Base Texture"))
 				{
-					auto TextureSourceIndex = TextureProperty->GetField("Base Texture").SingleGroup()->GetField("Source").SingleReference().Index;
+					auto TextureSourceIndex = TextureField->SingleGroup()->GetField("Source").SingleReference().Index;
 					auto Texture = UNetImmerse::LoadNiTexture(File.Path, TextureSourceIndex, true);
 					BaseMaterialInstance->SetTextureParameterValue("Diffuse Texture", Texture);
+				}
+
+				if (auto TextureField = TextureProperty->FindField("Glossiness Texture"))
+				{
+					auto TextureSourceIndex = TextureField->SingleGroup()->GetField("Source").SingleReference().Index;
+					auto Texture = UNetImmerse::LoadNiTexture(File.Path, TextureSourceIndex, true);
+					BaseMaterialInstance->SetTextureParameterValue("Glossiness Texture", Texture);
+				}
+
+				if (auto TextureField = TextureProperty->FindField("Normal Texture"))
+				{
+					auto TextureSourceIndex = TextureField->SingleGroup()->GetField("Source").SingleReference().Index;
+					auto Texture = UNetImmerse::LoadNiTexture(File.Path, TextureSourceIndex, true);
+					BaseMaterialInstance->SetTextureParameterValue("Normal Texture", Texture);
 				}
 			}
 		

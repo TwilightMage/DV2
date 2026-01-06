@@ -23,11 +23,31 @@ _Metadata is reloaded any time you open the project, you need to reload it manua
 7. Now you can open `Divinity 2` > `DV2 Browser`, you can list assets and view them here. Asset file formats supported are listed in separate sectiopn.
 
 ## Supported asset formats
-- `.lua` - lua scripts
-- `.nif` - NI block trees, representing scenes
-- `.dds` - single-block NI trees, single block is `NiPersistentSrcTextureRenderData`, NI block with texture data
-- `.xml` - single-block NI trees, single block is `xml::dom::CStreamableNode`, custom Larian format for tree data
-- `.kf` - partial support, NI trees representing animations
+| Format | Description                                                                                            |
+|--------|--------------------------------------------------------------------------------------------------------|
+| `.lua` | lua scripts                                                                                            |
+| `.nif` | NI block trees, representing scenes                                                                    |
+| `.dds` | single-block NI trees, single block is `NiPersistentSrcTextureRenderData`, NI block with texture data  |
+| `.xml` | single-block NI trees, single block is `xml::dom::CStreamableNode`, custom Larian format for tree data |
+| `.kf`  | partial support, NI trees representing animations                                                      |
+
+# Blueprints
+## DV2 Ghost
+Component/Actor to display meshes from diivinity 2 assets on UE level
+
+## DV2AssetPath meta-tag
+Use this on `FString` `UPRROPERTY` and `UPARAM` to make fields and pins display specific widget for path selection. Configuration is provided in value via comma-separated list of keys.
+- `dir` - allow selection of directories
+- `file` - allow selection of files of any format
+
+Example: directory-only selection
+```
+UPROPERTY(meta=(DV2AssetPath="dir"))
+FString SomeProperty;
+
+UFUNCTION(BlueprintCallable)
+void SomeFunc(UPARAM(meta=(DV2AssetPath="dir")) const FString& SomeParam);
+```
 
 # Dictionary
 - DV2 - divinity asset as is on drive, kind of larian-specific zip archieve

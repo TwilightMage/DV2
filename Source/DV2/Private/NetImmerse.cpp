@@ -8,6 +8,7 @@
 #include "NiMeta/CStreamableNode.h"
 #include "NiMeta/NiException.h"
 #include "NiMeta/NiMeta.h"
+#include "NiMeta/NiTools.h"
 #include "NiSceneComponents/NiBlockComponentConfigurator.h"
 
 FString NetImmerse::ReadStringNoSize(FMemoryReader& MemoryReader, uint32 SizeLimit)
@@ -495,29 +496,6 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler)
 		Handler->OnExitBlock(true);
 		return true;
 	});
-}
-
-UCStreamableNodeHandle* UNiFileHandle::GetCStreamableNode(int32 BlockIndex)
-{
-	if (!File.IsValid() || BlockIndex < 0 || BlockIndex >= File->Blocks.Num())
-		return nullptr;
-
-	auto Block = StaticCastSharedPtr<FNiBlock_CStreamableNode>(File->Blocks[BlockIndex]);
-
-	if (Block->CStreamableNodes.Num() == 0)
-		return nullptr;
-	
-	UCStreamableNodeHandle* Result = NewObject<UCStreamableNodeHandle>(this);
-	Result->Handle = Block->CStreamableNodes[0];
-	
-	return Result;
-}
-
-UNiFileHandle* UNetImmerse::OpenNiFile_K2(const FString& Path, bool bForceLoad)
-{
-	auto Result = NewObject<UNiFileHandle>();
-	Result->File = OpenNiFile(Path, bForceLoad);
-	return Result;
 }
 
 TSharedPtr<FNiFile> UNetImmerse::OpenNiFile(const FString& Path, bool bForceLoad)

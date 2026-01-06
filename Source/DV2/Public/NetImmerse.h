@@ -3,7 +3,6 @@
 #include "NiMeta/NiMeta.h"
 #include "NetImmerse.generated.h"
 
-class UCStreamableNodeHandle;
 struct Dv2File;
 
 namespace NiMeta
@@ -411,29 +410,16 @@ struct DV2_API FNiFile
 	TArray<TSharedPtr<FNiBlock>> Blocks;
 };
 
-UCLASS(DisplayName="NI File")
-class UNiFileHandle : public UObject
-{
-	GENERATED_BODY()
-
-public:
-	TSharedPtr<FNiFile> File;
-
-	UFUNCTION(BlueprintCallable, DisplayName="Get CStreamableNode", Category="Divinity 2|Net Immerse")
-	UCStreamableNodeHandle* GetCStreamableNode(int32 BlockIndex);
-};
-
 UCLASS(Abstract)
 class DV2_API UNetImmerse : public UObject
 {
 	GENERATED_BODY()
 
 public:
-	UFUNCTION(BlueprintCallable, DisplayName="Open Ni File", Category="Divinity 2|Net Immerse")
-	static UNiFileHandle* OpenNiFile_K2(UPARAM(meta=(DV2AssetPath)) const FString& Path, bool bForceLoad);
 	static TSharedPtr<FNiFile> OpenNiFile(const FString& Path, bool bForceLoad);
 	static TSharedPtr<FNiFile> OpenNiFile(const TSharedPtr<FDV2AssetTreeEntry>& AssetEntry, bool bForceLoad);
 
+	UFUNCTION(BlueprintCallable, Category="Divinity 2|Net Immerse")
 	static UTexture2D* LoadNiTexture(UPARAM(meta=(DV2AssetPath)) const FString& FilePath, int32 BlockIndex, bool ForceLoadFile);
 
 private:

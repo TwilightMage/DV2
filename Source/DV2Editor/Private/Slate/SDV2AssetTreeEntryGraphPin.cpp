@@ -23,11 +23,18 @@ namespace GraphPinObjectDefs
 
 void SDV2AssetTreeEntryGraphPin::Construct(const FArguments& InArgs, UEdGraphPin* InPin)
 {
+	PathTypes = InArgs._PathTypes;
 	SGraphPin::Construct(SGraphPin::FArguments(), InPin);
 }
 
 TSharedRef<SWidget> SDV2AssetTreeEntryGraphPin::GetDefaultValueWidget()
 {
+	if (GraphPinObj->LinkedTo.Num() > 0)
+		return SNullWidget::NullWidget;
+	
+	acceptDirectory = PathTypes.Contains("dir");
+	acceptAnyFile = PathTypes.Contains("file") || PathTypes.IsEmpty();
+
 	return SNew(SComboButton)
 		.ButtonStyle(FAppStyle::Get(), "PropertyEditor.AssetComboStyle")
 		.ForegroundColor_Lambda([this]() -> FSlateColor
@@ -70,9 +77,16 @@ TSharedRef<SWidget> SDV2AssetTreeEntryGraphPin::GetDefaultValueWidget()
 					SNew(SDV2Explorer)
 					.OnSelectionChanged_Lambda([this](const TSharedPtr<FDV2AssetTreeEntry>& Selection)
 					{
-						if (Selection.IsValid() && Selection->IsFile())
+						if (Selection.IsValid())
 						{
-							GraphPinObj->GetSchema()->TrySetDefaultValue(*GraphPinObj, Selection->GetAssetReference().GetFilePath());
+							bool Match =
+								(acceptDirectory && !Selection->IsFile()) ||
+								(acceptAnyFile && Selection->IsFile());
+
+							if (Match)
+							{
+								GraphPinObj->GetSchema()->TrySetDefaultValue(*GraphPinObj, Selection->GetPath());
+							}
 						}
 					})
 				];

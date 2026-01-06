@@ -1,11 +1,11 @@
 ﻿#include "DV2Editor.h"
 
+#include "BlueprintEditorModule.h"
 #include "DV2Browser.h"
 #include "DV2EditorCommands.h"
-#include "DV2Ghost.h"
 #include "DV2Style.h"
 #include "Divinity2Assets.h"
-#include "FDV2GhostCustomization.h"
+#include "FDV2AssetPathCustomization.h"
 #include "PinFactory.h"
 #include "NiMeta/NiMeta.h"
 
@@ -42,13 +42,13 @@ void FDV2EditorModule::StartupModule()
 
 	PinFactory = MakeShared<FPinFactory>();
 	FEdGraphUtilities::RegisterVisualPinFactory(PinFactory);
-	
+
 	DV2Browser = MakeShared<FDV2Browser>();
 	DV2Browser->Init();
-	
+
 	FGlobalTabmanager::Get()->RegisterNomadTabSpawner(FDV2Browser::TabName, FOnSpawnTab::CreateSP(DV2Browser.ToSharedRef(), &FDV2Browser::Open))
-							.SetDisplayName(NSLOCTEXT("FDV2UEEditorModule", "DV2 Browser", "DV2 Browser"))
-							.SetMenuType(ETabSpawnerMenuType::Hidden);
+	                        .SetDisplayName(NSLOCTEXT("FDV2UEEditorModule", "DV2 Browser", "DV2 Browser"))
+	                        .SetMenuType(ETabSpawnerMenuType::Hidden);
 
 	NiMeta::Reload();
 
@@ -89,14 +89,15 @@ void FDV2EditorModule::RegisterMenus()
 			"DV2Category",
 			INVTEXT("Divinity 2"),
 			INVTEXT("Divinity 2 tools"),
-			FNewMenuDelegate::CreateLambda([this](FMenuBuilder& MenuBuilder) {
+			FNewMenuDelegate::CreateLambda([this](FMenuBuilder& MenuBuilder)
+			{
 				MenuBuilder.PushCommandList(Commands.ToSharedRef());
 				MenuBuilder.AddMenuEntry(FDV2EditorCommands::Get().OpenDV2Browser);
 				MenuBuilder.AddMenuEntry(FDV2EditorCommands::Get().ReloadDV2Assets);
 				MenuBuilder.AddMenuEntry(FDV2EditorCommands::Get().ReloadNifMetadata);
 				MenuBuilder.PopCommandList();
 			})
-		);
+			);
 	};
 
 	UToolMenu* LevelEditorMenu = ToolMenus->ExtendMenu("LevelEditor.MainMenu");
@@ -108,23 +109,34 @@ void FDV2EditorModule::RegisterMenus()
 
 void FDV2EditorModule::RegisterPropertyCustomizations()
 {
-	FPropertyEditorModule& PropertyModule = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
-    
-	PropertyModule.RegisterCustomClassLayout(
-		UDV2GhostComponent::StaticClass()->GetFName(),
-		FOnGetDetailCustomizationInstance::CreateStatic(&FDV2GhostCustomization::MakeInstance)
-	);
+	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+	FBlueprintEditorModule& Kismet = FModuleManager::GetModuleChecked<FBlueprintEditorModule>("Kismet");
+
+	PropertyEditor.RegisterCustomPropertyTypeLayout(
+		FStrProperty::StaticClass()->GetFName(),
+		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FDV2AssetPathCustomization::MakeInstance)
+		);
+
+	auto DV2AssetPathBlueprintEditor = FOnGetVariableCustomizationInstance::CreateStatic(&FDV2AssetPathBlueprintEditor::MakeInstance);
+	DV2AssetPathBlueprintEditorHandle = DV2AssetPathBlueprintEditor.GetHandle();
+	Kismet.RegisterVariableCustomization(
+		FStrProperty::StaticClass(),
+		DV2AssetPathBlueprintEditor
+		);
 }
 
 void FDV2EditorModule::UnregisterPropertyCustomizations()
 {
 	if (FModuleManager::Get().IsModuleLoaded("PropertyEditor"))
 	{
-		FPropertyEditorModule& PropertyModule = FModuleManager::GetModuleChecked<FPropertyEditorModule>("PropertyEditor");
-		PropertyModule.UnregisterCustomClassLayout(UDV2GhostComponent::StaticClass()->GetFName());
+		FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
+		FBlueprintEditorModule& Kismet = FModuleManager::GetModuleChecked<FBlueprintEditorModule>("Kismet");
+
+		PropertyEditor.UnregisterCustomPropertyTypeLayout(FStrProperty::StaticClass()->GetFName());
+		Kismet.UnregisterVariableCustomization(FStrProperty::StaticClass(), DV2AssetPathBlueprintEditorHandle);
 	}
 }
 
 #undef LOCTEXT_NAMESPACE
-    
+
 IMPLEMENT_MODULE(FDV2EditorModule, DV2Editor)

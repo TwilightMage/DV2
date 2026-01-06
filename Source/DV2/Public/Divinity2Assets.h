@@ -55,6 +55,18 @@ public:
 
 	static TMulticastDelegate<void()>& OnAssetsReloaded();
 
+	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")
+	static bool PathExists(const FString& Path);
+
+	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")
+	static TArray<FString> GetPathChildren(const FString& Path);
+
+	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")
+	static TArray<FString> GetPathDirs(const FString& Path);
+
+	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")
+	static TArray<FString> GetPathFiles(const FString& Path, const FString& Extension = "");
+
 private:
 	struct FMutexHandle
 	{

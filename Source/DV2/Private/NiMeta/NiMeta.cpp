@@ -412,7 +412,7 @@ namespace NiMeta
 	{
 		ToString = [](const FNiFile& file, const FNiField& field, uint32 i) -> FString
 		{
-			return FString::FromInt(field.NumberAt<uint64>(i));
+			return FString::Printf(TEXT("%llu"), field.NumberAt<uint64>(i));
 		};
 	}
 

@@ -32,12 +32,31 @@ namespace NiMeta
 
 	struct metaObject
 	{
+		virtual ~metaObject() = default;
+		
+		virtual size_t typeId() const = 0;
+
+		template<typename T>
+		static size_t staticTypeId()
+		{
+			static uint8* value = new uint8(0);
+			return (size_t)value;
+		}
+
+		template<typename T>
+		bool isType() const
+		{
+			return typeId() == staticTypeId<T>();
+		}
+		
 		FString name;
 		FString description;
 	};
 
 	struct version : metaObject
 	{
+		virtual size_t typeId() const override { return staticTypeId<version>(); }
+		
 		FString num;
 		uint32 user;
 		FNiVersion ver;
@@ -45,6 +64,8 @@ namespace NiMeta
 
 	struct module : metaObject
 	{
+		virtual size_t typeId() const override { return staticTypeId<module>(); }
+		
 		uint32 priority = 0;
 		TArray<TSharedPtr<module>> depends;
 		bool custom = false;
@@ -63,6 +84,7 @@ namespace NiMeta
 	struct DV2_API fieldType : metaObject
 	{
 		virtual ~fieldType() = default;
+		virtual size_t typeId() const override { return staticTypeId<fieldType>(); }
 		virtual EFieldType GetFieldType() const = 0;
 
 		TFunction<FString(const FNiFile& file, const FNiField& field, uint32 i)> ToString;
@@ -81,11 +103,15 @@ namespace NiMeta
 
 	struct memberBase : metaObject
 	{
+		virtual size_t typeId() const override { return staticTypeId<memberBase>(); }
+		
 		TSharedPtr<fieldType> type;
 	};
 
 	struct field : memberBase
 	{
+		virtual size_t typeId() const override { return staticTypeId<field>(); }
+		
 		FString defaultValue;
 		FString lengthFieldName;
 		FString widthFieldName;
@@ -109,6 +135,7 @@ namespace NiMeta
 	struct DV2_API basicType : fieldType
 	{
 		basicType();
+		virtual size_t typeId() const override { return staticTypeId<basicType>(); }
 		virtual EFieldType GetFieldType() const override { return EFieldType::Basic; }
 
 		bool integral = false;
@@ -120,10 +147,13 @@ namespace NiMeta
 	{
 		struct option : metaObject
 		{
+			virtual size_t typeId() const override { return staticTypeId<option>(); }
+			
 			uint32 value = 0;
 		};
 
 		enumType();
+		virtual size_t typeId() const override { return staticTypeId<enumType>(); }
 		virtual EFieldType GetFieldType() const override { return EFieldType::Enum; }
 
 		const option* FindOption(uint32 value) const;
@@ -137,9 +167,12 @@ namespace NiMeta
 	{
 		struct option : memberBase
 		{
+			virtual size_t typeId() const override { return staticTypeId<option>(); }
+			
 			uint8 bit;
 		};
 
+		virtual size_t typeId() const override { return staticTypeId<bitflagsType>(); }
 		virtual EFieldType GetFieldType() const override { return EFieldType::BitFlags; }
 
 		TSharedPtr<basicType> storage;
@@ -150,11 +183,14 @@ namespace NiMeta
 	{
 		struct member : memberBase
 		{
+			virtual size_t typeId() const override { return staticTypeId<member>(); }
+			
 			uint8 width;
 			uint8 pos;
 			uint64 mask;
 		};
 
+		virtual size_t typeId() const override { return staticTypeId<bitfieldType>(); }
 		virtual EFieldType GetFieldType() const override { return EFieldType::BitField; }
 
 		TSharedPtr<basicType> storage;
@@ -163,14 +199,19 @@ namespace NiMeta
 
 	struct DV2_API structType : fieldType, fieldStorage
 	{
-		TSharedPtr<module> module;
-
+		virtual size_t typeId() const override { return staticTypeId<structType>(); }
 		virtual EFieldType GetFieldType() const override { return EFieldType::Struct; }
 		void ProcessFields(const FNiFile& file, const TFunction<void(const TSharedPtr<field>& field)>& fieldHandler, const TFunction<FString(const FString& fieldName)>& fieldTokenHandler);
+	
+		TSharedPtr<module> module;
 	};
 
 	struct DV2_API niobject : metaObject, fieldStorage
 	{
+		virtual size_t typeId() const override { return staticTypeId<niobject>(); }
+		void ReadFrom(const FNiFile& File, FMemoryReader& MemoryReader, TSharedPtr<FNiBlock>& Block);
+		void ProcessFields(const FNiFile& file, const TFunction<void(const TSharedPtr<field>& field)>& fieldHandler, const TFunction<FString(const FString& fieldName)>& fieldTokenHandler, TSet<FString>& inheritNames);
+	
 		bool abstract = false;
 		TSharedPtr<niobject> inherit;
 		TSharedPtr<module> module;
@@ -180,9 +221,6 @@ namespace NiMeta
 		
 		TFunction<void(TSharedPtr<FNiBlock>& Block, FMemoryReader& Reader, const FNiFile& File)> CustomRead;
 		TFunction<void(FMenuBuilder& MenuBuilder, const TSharedPtr<FNiFile>& File, const TSharedPtr<FNiBlock>& Block)> BuildContextMenu;
-
-		void ReadFrom(const FNiFile& File, FMemoryReader& MemoryReader, TSharedPtr<FNiBlock>& Block);
-		void ProcessFields(const FNiFile& file, const TFunction<void(const TSharedPtr<field>& field)>& fieldHandler, const TFunction<FString(const FString& fieldName)>& fieldTokenHandler, TSet<FString>& inheritNames);
 	};
 
 	DV2_API TSharedPtr<niobject> GetNiObject(const FString& name);

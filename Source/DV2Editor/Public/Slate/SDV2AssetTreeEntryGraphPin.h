@@ -8,9 +8,16 @@ public:
 		{
 		}
 
+		SLATE_ARGUMENT(TArray<FString>, PathTypes)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs, UEdGraphPin* InPin);
 
 	virtual TSharedRef<SWidget> GetDefaultValueWidget() override;
+
+private:
+	TArray<FString> PathTypes;
+
+	bool acceptDirectory = false;
+	bool acceptAnyFile = true;
 };

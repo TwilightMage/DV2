@@ -24,6 +24,7 @@ public class DV2UncookedOnly : ModuleRules
                 "BlueprintGraph",
                 "KismetCompiler",
                 "UnrealEd",
+                "ToolMenus",
             }
         );
     }

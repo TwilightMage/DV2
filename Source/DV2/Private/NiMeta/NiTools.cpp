@@ -1,7 +1,5 @@
 ﻿#include "NiMeta/NiTools.h"
 
-#include "NetImmerse.h"
-
 namespace NiTools
 {
 	FString ReadString(const FNiFile& File, const FNiField& Field, uint32 Index)
@@ -121,5 +119,66 @@ namespace NiTools
 			);
 
 		return matrix.Rotator();
+	}
+
+	bool ReadStringSafe(FString& Result, const FNiFile& File, const FNiField& Field, uint32 Index)
+	{
+		if (Field.Meta->type->ToString.IsSet())
+		{
+			Result = Field.Meta->type->ToString(File, Field, Index);
+			return true;
+		}
+
+		return false;
+	}
+
+	bool ReadStructSafe(TArray<FFieldQuery>& Query, const FNiFile& File, const FNiField& Field, uint32 Index)
+	{
+		for (auto& Entry : Query)
+			Entry.bSuccess = false;
+		
+		if (Index >= Field.Size && !Field.IsGroup())
+		{
+			return false;
+		}
+
+		bool allSuccess = true;
+		auto Group = Field.GroupAt(Index);
+		for (auto& Entry : Query)
+		{
+			if (auto SubField = Group->FindField(Entry.FieldName))
+			{
+				if (Entry.ExpectedType == FFieldQuery::FT_Integer)
+				{
+					int64 Number;
+					if (ReadNumberSafe(Number, *SubField, Entry.ValueIndex))
+						Entry.SetValue(Number);
+					else
+						allSuccess = false;
+				}
+				else if (Entry.ExpectedType == FFieldQuery::FT_Float)
+				{
+					float Number;
+					if (ReadNumberSafe(Number, *SubField, Entry.ValueIndex))
+						Entry.SetValue(Number);
+					else
+						allSuccess = false;
+				}
+				else if (Entry.ExpectedType == FFieldQuery::FT_String)
+				{
+					if (SubField->Meta->type->ToString.IsSet())
+						Entry.SetValue(SubField->Meta->type->ToString(File, *SubField, Entry.ValueIndex));
+					else
+						allSuccess = false;
+						
+				}
+				else
+					check(false);
+			}
+			else
+				allSuccess = false;
+		}
+
+		return allSuccess;
 	}
 }

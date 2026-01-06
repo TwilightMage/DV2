@@ -14,7 +14,7 @@ class DV2UNCOOKEDONLY_API UK2Node_TraverseCStreamable : public UK2Node
 
 public:
 	virtual void AllocateDefaultPins() override;
-	virtual void ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
+	virtual void ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph) override;
 	virtual void GetMenuActions(FBlueprintActionDatabaseRegistrar& ActionRegistrar) const override;
 	virtual void AutowireNewNode(UEdGraphPin* FromPin) override;
 	virtual FSlateIcon GetIconAndTint(FLinearColor& OutColor) const override;

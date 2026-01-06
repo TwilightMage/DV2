@@ -69,3 +69,10 @@ const FDv2AssetReference& FDV2AssetTreeEntry::GetAssetReference() const
 {
 	return File->assetReferences[AssetIndex];
 }
+
+FString FDV2AssetTreeEntry::GetPath() const
+{
+	if (auto P = Parent.Pin())
+		return P->GetPath() + "/" + Name;
+	return Name;
+}

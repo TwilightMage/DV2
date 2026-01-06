@@ -12,12 +12,12 @@ struct FNiFile;
 /**
  * Use this actor to spawn NIF scenes UE world
  */
-UCLASS(DisplayName="DV2 Ghost Component")
+UCLASS(DisplayName="DV2 Ghost Component", ClassGroup="Divinity 2", meta=(BlueprintSpawnableComponent))
 class DV2_API UDV2GhostComponent : public USceneComponent
 {
 	GENERATED_BODY()
 
-	friend class FDV2GhostCustomization;
+	friend class FDV2AssetPathCustomization;
 	
 public:
 	DECLARE_MULTICAST_DELEGATE(FOnFileChanged);
@@ -41,7 +41,7 @@ private:
 	void ClearFileSubComponents();
 	void SetFilePrivate(const FString& InFilePath);
 
-	UPROPERTY()
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="DV2 Ghost Component", meta=(DV2AssetPath="dir, file", AllowPrivateAccess))
 	FString FilePath;
 	TSharedPtr<FNiFile> File;
 };

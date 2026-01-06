@@ -25,11 +25,19 @@ TSharedPtr<SGraphPin> FPinFactory::CreatePin(UEdGraphPin* Pin) const
 	{
 		if (Pin->Direction == EGPD_Input)
 		{
-			auto Property = GetAssociatedProperty(Pin);
-			if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_String && Property->HasMetaData("DV2AssetPath"))
-				return SNew(SDV2AssetTreeEntryGraphPin, Pin);
+			if (auto Property = GetAssociatedProperty(Pin))
+				if (Pin->PinType.PinCategory == UEdGraphSchema_K2::PC_String && Property->HasMetaData("DV2AssetPath"))
+				{
+					TArray<FString> PathTypes;
+					Property->GetMetaData("DV2AssetPath").ParseIntoArray(PathTypes, TEXT(","));
+					for (auto& T : PathTypes)
+						T = T.TrimStartAndEnd().ToLower();
+					
+					return SNew(SDV2AssetTreeEntryGraphPin, Pin)
+						.PathTypes(PathTypes);
+				}
 		}
 	}
-	
+
 	return FGraphPanelPinFactory::CreatePin(Pin);
 }

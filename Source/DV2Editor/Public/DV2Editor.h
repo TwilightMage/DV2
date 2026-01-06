@@ -23,4 +23,6 @@ private:
 
 	void RegisterPropertyCustomizations();
 	void UnregisterPropertyCustomizations();
+
+	FDelegateHandle DV2AssetPathBlueprintEditorHandle;
 };

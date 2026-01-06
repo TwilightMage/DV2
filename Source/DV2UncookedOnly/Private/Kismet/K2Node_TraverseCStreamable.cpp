@@ -28,7 +28,7 @@ void UK2Node_TraverseCStreamable::AllocateDefaultPins()
 	CreatePin(EGPD_Output, UEdGraphSchema_K2::PC_Exec, UEdGraphSchema_K2::PN_Completed);
 }
 
-void UK2Node_TraverseCStreamable::ExpandNode(class FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
+void UK2Node_TraverseCStreamable::ExpandNode(FKismetCompilerContext& CompilerContext, UEdGraph* SourceGraph)
 {
 	Super::ExpandNode(CompilerContext, SourceGraph);
 	const UEdGraphSchema_K2* Schema = CompilerContext.GetSchema();
@@ -116,7 +116,7 @@ void UK2Node_TraverseCStreamable::AutowireNewNode(UEdGraphPin* FromPin)
 	{
 		UEdGraphPin* ThenPin = FromPin->GetOwningNode()->FindPin(UEdGraphSchema_K2::PN_Then);
 		UEdGraphPin* ExecutePin = FindPin(UEdGraphSchema_K2::PN_Execute);
-		if (ExecutePin && ThenPin && GetSchema()->ArePinsCompatible(ThenPin, ExecutePin, nullptr))
+		if (ExecutePin && ThenPin && ThenPin->LinkedTo.IsEmpty() && GetSchema()->ArePinsCompatible(ThenPin, ExecutePin, nullptr))
 		{
 			GetSchema()->TryCreateConnection(ThenPin, ExecutePin);
 			GetGraph()->NotifyGraphChanged();

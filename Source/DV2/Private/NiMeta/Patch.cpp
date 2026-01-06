@@ -33,10 +33,18 @@ namespace NiMeta
 				auto block = value.Resolve(file);
 
 				return block.IsValid()
-					? FString::Printf(TEXT("%s"), *block->Type->name)
+					? FString::Printf(TEXT("%s [%d]"), *block->Type->name, value.Index)
 					: FString("<none>");
 			};
 		}, "Ref", "Ptr");
+
+		PatchBasic([](basicType& entry)
+		{
+			entry.ToString = [](const FNiFile& file, const FNiField& field, uint32 i) -> FString
+			{
+				return FString::Printf(TEXT("%lld"), field.NumberAt<int64>(i));
+			};
+		}, "int64", "int", "short", "sbyte");
 
 		PatchBasic([](basicType& entry)
 		{

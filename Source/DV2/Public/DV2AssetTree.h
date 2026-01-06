@@ -19,9 +19,11 @@ struct DV2_API FDV2AssetTreeEntry
 	bool ExportToDiskRecursive(bool overwrite = false) const;
 
 	const FDv2AssetReference& GetAssetReference() const;
+	FString GetPath() const;
 
 	FString Name;
 	TSortedMap<FString, TSharedPtr<FDV2AssetTreeEntry>> Children;
+	TWeakPtr<FDV2AssetTreeEntry> Parent;
 	TSharedPtr<Dv2File> File;
 	int32 AssetIndex = -1;
 };
