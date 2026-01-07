@@ -3,10 +3,13 @@
 #include "BlueprintEditorModule.h"
 #include "DV2Browser.h"
 #include "DV2EditorCommands.h"
+#include "DV2Ghost.h"
 #include "DV2Style.h"
 #include "Divinity2Assets.h"
 #include "FDV2AssetPathCustomization.h"
+#include "FNiMaskCustomization.h"
 #include "PinFactory.h"
+#include "NiMeta/CStreamableNode.h"
 #include "NiMeta/NiMeta.h"
 
 #define LOCTEXT_NAMESPACE "FDV2EditorModule"
@@ -37,6 +40,13 @@ void FDV2EditorModule::StartupModule()
 			NiMeta::Reload();
 		}),
 		FCanExecuteAction());
+	Commands->MapAction(
+		FDV2EditorCommands::Get().ReloadCStreamableAliases,
+		FExecuteAction::CreateLambda([]()
+		{
+			FCStreamableNode::RefreshAliases();
+		}),
+		FCanExecuteAction());
 
 	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(this, &FDV2EditorModule::RegisterMenus));
 
@@ -51,6 +61,7 @@ void FDV2EditorModule::StartupModule()
 	                        .SetMenuType(ETabSpawnerMenuType::Hidden);
 
 	NiMeta::Reload();
+	FCStreamableNode::RefreshAliases();
 
 	FDV2Style::Initialize();
 
@@ -95,6 +106,7 @@ void FDV2EditorModule::RegisterMenus()
 				MenuBuilder.AddMenuEntry(FDV2EditorCommands::Get().OpenDV2Browser);
 				MenuBuilder.AddMenuEntry(FDV2EditorCommands::Get().ReloadDV2Assets);
 				MenuBuilder.AddMenuEntry(FDV2EditorCommands::Get().ReloadNifMetadata);
+				MenuBuilder.AddMenuEntry(FDV2EditorCommands::Get().ReloadCStreamableAliases);
 				MenuBuilder.PopCommandList();
 			})
 			);
@@ -123,6 +135,11 @@ void FDV2EditorModule::RegisterPropertyCustomizations()
 		FStrProperty::StaticClass(),
 		DV2AssetPathBlueprintEditor
 		);
+
+	PropertyEditor.RegisterCustomPropertyTypeLayout(
+		FNiMask::StaticStruct()->GetFName(),
+		FOnGetPropertyTypeCustomizationInstance::CreateStatic(&FNiMaskCustomization::MakeInstance)
+		);
 }
 
 void FDV2EditorModule::UnregisterPropertyCustomizations()
@@ -134,6 +151,8 @@ void FDV2EditorModule::UnregisterPropertyCustomizations()
 
 		PropertyEditor.UnregisterCustomPropertyTypeLayout(FStrProperty::StaticClass()->GetFName());
 		Kismet.UnregisterVariableCustomization(FStrProperty::StaticClass(), DV2AssetPathBlueprintEditorHandle);
+
+		PropertyEditor.UnregisterCustomPropertyTypeLayout(FNiMask::StaticStruct()->GetFName());
 	}
 }
 

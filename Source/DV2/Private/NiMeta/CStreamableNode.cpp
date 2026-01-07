@@ -3,6 +3,10 @@
 #include "DV2.h"
 #include "NetImmerse.h"
 
+#if WITH_EDITOR
+#include "Interfaces/IPluginManager.h"
+#endif
+
 void FCStreamableNode::ReadFrom(TSharedPtr<FNiBlock>& Block, FMemoryReader& Reader)
 {
 	constexpr uint8 NF_HAS_CHILDREN = 0x1;
@@ -117,6 +121,9 @@ FText FCStreamableNode::GetNodeTitle(const FCStreamableNode& InNode)
 
 FText FCStreamableNode::GetPropertyTitle(uint32 InPropertyType)
 {
+	if (auto Value = Aliases.Find(InPropertyType))
+		return *Value;
+	
 	return FText::FromString(FString::Printf(TEXT("Property #%d"), InPropertyType));
 }
 
@@ -132,6 +139,38 @@ bool FCStreamableNode::TraverseTree(const TFunction<bool(const TSharedPtr<FCStre
 	}
 	
 	return true;
+}
+
+void FCStreamableNode::RefreshAliases()
+{
+#if WITH_EDITOR
+	Aliases.Empty();
+
+	TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(*FDV2Module::PluginName);
+	FString ConfigPath = FPaths::ConvertRelativePathToFull(Plugin->GetBaseDir() / TEXT("Resources") / TEXT("NiMeta") / TEXT("CStreamableAliases.ini"));
+
+	GConfig->LoadFile(ConfigPath);
+	
+	FConfigFile* ConfigFile = GConfig->FindConfigFile(ConfigPath);
+	if (ConfigFile)
+	{
+		// Iterate through the map of sections: Key = Section Name, Value = Section Data
+		for (auto& SectionPair : *ConfigFile)
+		{
+			const FConfigSection& Section = SectionPair.Value;
+
+			for (FConfigSection::TConstIterator It(Section); It; ++It)
+			{
+				int32 Key;
+				LexFromString(Key, *It.Key().ToString());
+				
+				FText Value = FText::FromString(It.Value().GetValue());
+
+				Aliases.Add(Key, Value);
+			}
+		}
+	}
+#endif
 }
 
 void UCStreamableNodeHandle::TraverseTree(UCStreamableNodeHandle* Node, const FOnTreeIteration& LoopDelegate, bool& bBreakRequested)

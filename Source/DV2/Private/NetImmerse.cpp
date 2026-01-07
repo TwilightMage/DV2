@@ -472,7 +472,13 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler)
 
 		const auto& Config = BlockComponentConfigs[Block->Type];
 
-		Handler->OnEnterBlock(Block, Parent);
+		auto EnterState = Handler->OnEnterBlock(Block, Parent);
+
+		if (EnterState == FSceneSpawnHandler::EBlockEnterResult::SkipThis)
+		{
+			Handler->OnExitBlock(false);
+			return false;
+		}
 
 		FSceneSpawnConfiguratorContext Ctx;
 		Ctx.Block = Block;
@@ -494,7 +500,7 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler)
 			}
 
 		Handler->OnExitBlock(true);
-		return true;
+		return EnterState != FSceneSpawnHandler::EBlockEnterResult::SkipChildren;
 	});
 }
 

@@ -40,7 +40,7 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 	FNifViewportClient* ViewportClient;
 	TMap<TSharedPtr<FNiBlock>, USceneComponent*>& BlockToComponentMap;
 
-	virtual void OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
+	virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
 	{
 		auto Component = ViewportClient->SpawnComponent<USceneComponent>();
 		Component->Rename(*FString::Printf(TEXT("BLOCK_%d"), Block->BlockIndex));
@@ -50,6 +50,8 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 		Current.ParentBlock = ParentBlock;
 		Current.Component = Component;
 		Current.SubComponents.Reset();
+
+		return EBlockEnterResult::Continue;
 	}
 
 	virtual void OnExitBlock(bool bSuccess) override
@@ -106,6 +108,16 @@ void FNifViewportClient::LoadNifFile(const TSharedPtr<FNiFile>& NifFile)
 	FSceneSpawnHandler Handler(this, BlockToComponentMap);
 
 	NifFile->SpawnScene(&Handler);
+
+	if (!NifFile->Blocks.IsEmpty())
+	{
+		if (auto RootComponent = BlockToComponentMap.FindRef(NifFile->Blocks[0]))
+		{
+			auto RootScale = RootComponent->GetRelativeScale3D();
+			RootScale.Y *= -1;
+			RootComponent->SetRelativeScale3D(RootScale);
+		}
+	}
 
 	Viewport->InvalidateHitProxy();
 }

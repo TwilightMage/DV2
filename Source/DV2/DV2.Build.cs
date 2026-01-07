@@ -50,7 +50,8 @@ public class DV2 : ModuleRules
 				new string[]
 				{
 					"UnrealEd",
-					"ImageWriteQueue"
+					"ImageWriteQueue",
+					"Projects"
 				}
 			);
 		}

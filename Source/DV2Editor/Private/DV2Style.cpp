@@ -1,12 +1,11 @@
 ﻿#include "DV2Style.h"
 
+#include "DV2.h"
 #include "NetImmerse.h"
 #include "Interfaces/IPluginManager.h"
 #include "Styling/SlateStyleRegistry.h"
 
 const FSlateBrush* DefaultBrush = FAppStyle::Get().GetBrush("DefaultBrush");
-
-const FString PluginName = TEXT("DV2");
 
 void FDV2Style::Initialize()
 {
@@ -14,7 +13,7 @@ void FDV2Style::Initialize()
 	{
 		StyleInstance = MakeShareable(new FSlateStyleSet(GetStyleSetName()));
 
-		TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(*PluginName);
+		TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(*FDV2Module::PluginName);
 		FString ResourcesDir = Plugin->GetBaseDir() / TEXT("Resources");
 
 		StyleInstance->SetContentRoot(ResourcesDir);

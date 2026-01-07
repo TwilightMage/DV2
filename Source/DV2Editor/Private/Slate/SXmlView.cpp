@@ -1,6 +1,8 @@
 ﻿#include "Slate/SXmlView.h"
 
+#include "DV2Editor.h"
 #include "TextUtils.h"
+#include "Interfaces/IPluginManager.h"
 #include "NiMeta/CStreamableNode.h"
 
 void SXmlView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)

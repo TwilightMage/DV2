@@ -41,11 +41,16 @@ public:
 
 	bool TraverseTree(const TFunction<bool(const TSharedPtr<FCStreamableNode>& InNodeData)>& InHandler);
 
+	static void RefreshAliases();
+
 	FCStreamableNodeData Data = {};
 
 	TArray<TSharedPtr<FCStreamableNode>> Children;
 
 	TWeakPtr<FCStreamableNode> Parent;
+
+private:
+	inline static TMap<int32, FText> Aliases;
 };
 
 UCLASS(DisplayName="CStreamableNode")

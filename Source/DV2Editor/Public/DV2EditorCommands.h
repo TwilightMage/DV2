@@ -15,4 +15,5 @@ public:
 	TSharedPtr<FUICommandInfo> OpenDV2Browser;
 	TSharedPtr<FUICommandInfo> ReloadDV2Assets;
 	TSharedPtr<FUICommandInfo> ReloadNifMetadata;
+	TSharedPtr<FUICommandInfo> ReloadCStreamableAliases;
 };

@@ -180,7 +180,7 @@ struct FNiFieldBuilder
 	{
 		T Local;
 		T* Buff = OutCopy ? OutCopy : &Local;
-		
+
 		Reader << *Buff;
 		return Value((uint64)*Buff);
 	}
@@ -189,7 +189,7 @@ struct FNiFieldBuilder
 	{
 		TArray<uint8> Local;
 		TArray<uint8>* Buff = OutCopy ? OutCopy : &Local;
-		
+
 		Buff->SetNum(Num);
 		Reader.ByteOrderSerialize(Buff->GetData(), Num);
 		return Values(*Buff);
@@ -341,7 +341,7 @@ public:
 	FString GetFullName(const FNiFile& File) const;
 	void TraverseReferenced(const TFunction<bool(const TSharedPtr<FNiBlock>& block, const TSharedPtr<FNiBlock>& parent)>& handler);
 	void TraverseChildren(const TFunction<bool(const TSharedPtr<FNiBlock>& block, const TSharedPtr<FNiBlock>& parent)>& handler);
-	
+
 	TSharedPtr<FNiBlock> FindBlockByType(const TSharedPtr<NiMeta::niobject>& BlockType) const
 	{
 		if (auto chld = Referenced.FindByPredicate([&](const TSharedPtr<FNiBlock>& chld) { return chld->Type == BlockType; }))
@@ -386,7 +386,14 @@ struct DV2_API FNiFile
 
 	struct FSceneSpawnHandler
 	{
-		virtual void OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) = 0;
+		enum class EBlockEnterResult
+		{
+			Continue,     // As is
+			SkipChildren, // Setup block but skip children, exit with success = true
+			SkipThis,     // Skip this block, exit with success = false
+		};
+
+		virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) = 0;
 		virtual void OnExitBlock(bool bSuccess) = 0;
 		virtual void OnAttachSubComponent(USceneComponent* SubComponent) = 0;
 		virtual void OnSetComponentTransform(const FTransform& Transform) = 0;
@@ -420,7 +427,8 @@ public:
 	static TSharedPtr<FNiFile> OpenNiFile(const TSharedPtr<FDV2AssetTreeEntry>& AssetEntry, bool bForceLoad);
 
 	UFUNCTION(BlueprintCallable, Category="Divinity 2|Net Immerse")
-	static UTexture2D* LoadNiTexture(UPARAM(meta=(DV2AssetPath)) const FString& FilePath, int32 BlockIndex, bool ForceLoadFile);
+	static UTexture2D* LoadNiTexture(UPARAM(meta=(DV2AssetPath))
+	                                 const FString& FilePath, int32 BlockIndex, bool ForceLoadFile);
 
 private:
 	inline static TMap<FString, TWeakPtr<FNiFile>> LoadedNiFiles;

@@ -12,4 +12,6 @@ public:
 
 	virtual void StartupModule() override;
 	virtual void ShutdownModule() override;
+
+	inline const static FString PluginName = TEXT("DV2");
 };

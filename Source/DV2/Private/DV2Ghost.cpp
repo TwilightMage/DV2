@@ -32,6 +32,11 @@ void UDV2GhostComponent::PostEditChangeProperty(struct FPropertyChangedEvent& Pr
 
 	if (PropertyChangedEvent.Property->GetName() == GET_MEMBER_NAME_CHECKED(UDV2GhostComponent, FilePath))
 	{
+		ShowMask = FNiMask::CreateWhite();
+		SetFilePrivate(FilePath);
+	}
+	else if (PropertyChangedEvent.Property->GetName() == GET_MEMBER_NAME_CHECKED(UDV2GhostComponent, ShowMask))
+	{
 		SetFilePrivate(FilePath);
 	}
 }
@@ -66,12 +71,16 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 		TSharedPtr<HierarchyNode> Node;
 	} Current;
 
-	virtual void OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
+	virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
 	{
+		if (!Ghost->GetShowMask().ShouldShow(Block->BlockIndex))
+			return EBlockEnterResult::SkipThis;
+
 		Current.Block = Block;
 		Current.ParentBlock = ParentBlock;
 		Current.Node = MakeShared<HierarchyNode>();
 		Current.Node->Children.Reserve(Block->Children.Num());
+		return EBlockEnterResult::Continue;
 	}
 
 	virtual void OnExitBlock(bool bSuccess) override
@@ -106,20 +115,22 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 		return Ghost;
 	}
 
+	bool HasAnyObjects() const
+	{
+		return RootNode.IsValid();
+	}
+
 	void CalculateTransforms(const TFunction<void(USceneComponent*)>& ComponentHandler)
 	{
-		if (!RootNode)
-			return;
-
 		CalculateTransform(*RootNode, nullptr, ComponentHandler);
 	}
 
 	static void CalculateTransform(HierarchyNode& Node, const FTransform* ParentTransform, const TFunction<void(USceneComponent*)>& ComponentHandler)
 	{
 		if (ParentTransform)
-		{
 			Node.GlobalTransform = Node.RelativeTransform * *ParentTransform;
-		}
+		else
+			Node.GlobalTransform = Node.RelativeTransform;
 
 		for (const auto& SubComponent : Node.SubComponents)
 		{
@@ -144,11 +155,19 @@ void UDV2GhostComponent::AddFileSubComponents()
 	Handler.BlockToNodeMap.Reserve(File->Blocks.Num());
 
 	File->SpawnScene(&Handler);
-	Handler.CalculateTransforms([&](USceneComponent* SubComponent)
+
+	if (Handler.HasAnyObjects())
 	{
-		SubComponent->RegisterComponent();
-		SubComponent->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
-	});
+		auto RootScale = Handler.RootNode->RelativeTransform.GetScale3D();
+		RootScale.Y *= -1;
+		Handler.RootNode->RelativeTransform.SetScale3D(RootScale);
+		
+		Handler.CalculateTransforms([&](USceneComponent* SubComponent)
+		{
+			SubComponent->RegisterComponent();
+			SubComponent->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
+		});	
+	}
 }
 
 void UDV2GhostComponent::ClearFileSubComponents()
