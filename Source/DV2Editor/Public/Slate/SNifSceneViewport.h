@@ -9,11 +9,11 @@ class SNifSceneViewport;
 class FNifViewportClient : public FEditorViewportClient
 {
 	friend struct FSceneSpawnHandler;
-	
+
 public:
 	FNifViewportClient(const TSharedPtr<FPreviewScene>& InScene, const TSharedPtr<SNifSceneViewport>& Widget);
 
-	void LoadNifFile(const TSharedPtr<FNiFile>& NifFile);
+	void LoadNifFile(const TSharedPtr<FNiFile>& NifFile, uint32 RootBlockIndex = 0);
 
 	virtual void Draw(const FSceneView* View, FPrimitiveDrawInterface* PDI) override;
 	virtual void Draw(FViewport* InViewport, FCanvas* Canvas) override;
@@ -23,6 +23,8 @@ public:
 	const USceneComponent* GetSelectedComponent() const { return CachedSelectedComponent; }
 	void SetSelectedBlock(const TSharedPtr<FNiBlock>& Block);
 
+	void SetRootTransform(const FTransform& InRootTransform);
+	
 	virtual bool RequiresHitProxyStorage() override;
 	virtual void ProcessClick(FSceneView& View, HHitProxy* HitProxy, FKey Key, EInputEvent Event, uint32 HitX, uint32 HitY) override;
 
@@ -94,18 +96,28 @@ private:
 	USceneComponent* CachedSelectedComponent;
 
 	TSet<USceneComponent*> GeneratedNifComponents;
-	USceneComponent* SceneRoot;
+	USceneComponent* SceneRoot = nullptr;
 	TMap<TSharedPtr<FNiBlock>, USceneComponent*> BlockToComponentMap;
 	TMap<USceneComponent*, TSharedPtr<FNiBlock>> ComponentToBlockMap;
+
+	FTransform UseRootTransform;
 };
 
 class SNifSceneViewport : public SEditorViewport
 {
 public:
 	SLATE_BEGIN_ARGS(SNifSceneViewport)
+			: _OrbitingCamera(false)
+			, _RootOffset(FVector::ZeroVector)
+			, _RootRotation(FRotator::ZeroRotator)
+			, _RootScale(FVector::OneVector)
 		{
 		}
 
+		SLATE_ARGUMENT(bool, OrbitingCamera)
+		SLATE_ARGUMENT(FVector, RootOffset)
+		SLATE_ARGUMENT(FRotator, RootRotation)
+		SLATE_ARGUMENT(FVector, RootScale)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -117,4 +129,7 @@ public:
 private:
 	TSharedPtr<FNifViewportClient> ViewportClient;
 	TSharedPtr<FPreviewScene> Scene;
+
+	bool OrbitingCamera;
+	FTransform RootTransform;
 };

@@ -11,6 +11,7 @@ FNifViewportClient::FNifViewportClient(const TSharedPtr<FPreviewScene>& InScene,
 	EngineShowFlags.SetEditor(true);
 	EngineShowFlags.SetCompositeEditorPrimitives(true);
 
+	SetViewMode(VMI_Unlit);
 	SetRealtime(true);
 
 	UStaticMeshComponent* SkyComp = NewObject<UStaticMeshComponent>(GetWorld());
@@ -20,15 +21,22 @@ FNifViewportClient::FNifViewportClient(const TSharedPtr<FPreviewScene>& InScene,
 	SkyComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	SkyComp->CastShadow = false;
 	SkyComp->bVisibleInRayTracing = false;
+
+	UseRootTransform = FTransform(
+		FRotator::ZeroRotator,
+		FVector::ZeroVector,
+		FVector(1, -1, 1)
+		);
 }
 
 struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 {
 	FSceneSpawnHandler(FNifViewportClient* InViewportClient, TMap<TSharedPtr<FNiBlock>, USceneComponent*>& InBlockToComponentMap)
 		: ViewportClient(InViewportClient)
-		, BlockToComponentMap(InBlockToComponentMap)
-	{}
-	
+		  , BlockToComponentMap(InBlockToComponentMap)
+	{
+	}
+
 	struct
 	{
 		TSharedPtr<FNiBlock> Block;
@@ -63,17 +71,20 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 
 			ViewportClient->BlockToComponentMap.Add(Current.Block, Current.Component);
 			ViewportClient->ComponentToBlockMap.Add(Current.Component, Current.Block);
-			
+
 			for (auto SubComponent : Current.SubComponents)
 			{
 				SubComponent->AttachToComponent(Current.Component, FAttachmentTransformRules::KeepRelativeTransform);
 				ViewportClient->GetPreviewScene()->AddComponent(SubComponent, FTransform::Identity);
-				
+
 				TArray<USceneComponent*> InnerSubComponents;
 				SubComponent->GetChildrenComponents(true, InnerSubComponents);
 				for (auto InnerSubComponent : InnerSubComponents)
 					ViewportClient->GetPreviewScene()->AddComponent(InnerSubComponent, FTransform::Identity);
 			}
+
+			if (!ViewportClient->SceneRoot)
+				ViewportClient->SceneRoot = Current.Component;
 		}
 		else
 		{
@@ -98,7 +109,7 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 	}
 };
 
-void FNifViewportClient::LoadNifFile(const TSharedPtr<FNiFile>& NifFile)
+void FNifViewportClient::LoadNifFile(const TSharedPtr<FNiFile>& NifFile, uint32 RootBlockIndex)
 {
 	Clear();
 
@@ -107,16 +118,11 @@ void FNifViewportClient::LoadNifFile(const TSharedPtr<FNiFile>& NifFile)
 
 	FSceneSpawnHandler Handler(this, BlockToComponentMap);
 
-	NifFile->SpawnScene(&Handler);
+	NifFile->SpawnScene(&Handler, RootBlockIndex);
 
-	if (!NifFile->Blocks.IsEmpty())
+	if (SceneRoot)
 	{
-		if (auto RootComponent = BlockToComponentMap.FindRef(NifFile->Blocks[0]))
-		{
-			auto RootScale = RootComponent->GetRelativeScale3D();
-			RootScale.Y *= -1;
-			RootComponent->SetRelativeScale3D(RootScale);
-		}
+		SceneRoot->SetRelativeTransform(UseRootTransform);
 	}
 
 	Viewport->InvalidateHitProxy();
@@ -179,6 +185,17 @@ void FNifViewportClient::SetSelectedBlock(const TSharedPtr<FNiBlock>& Block)
 	CachedSelectedComponent = BlockToComponent(SelectedBlock);
 }
 
+void FNifViewportClient::SetRootTransform(const FTransform& InRootTransform)
+{
+	UseRootTransform = InRootTransform;
+	UseRootTransform.SetScale3D(UseRootTransform.GetScale3D() * FVector(1, -1, 1));
+	
+	if (SceneRoot)
+	{
+		SceneRoot->SetRelativeTransform(UseRootTransform);
+	}
+}
+
 bool FNifViewportClient::RequiresHitProxyStorage()
 {
 	return true;
@@ -211,12 +228,16 @@ void FNifViewportClient::Clear()
 	}
 
 	GeneratedNifComponents.Reset();
+	SceneRoot = nullptr;
 	BlockToComponentMap.Reset();
 	ComponentToBlockMap.Reset();
 }
 
 void SNifSceneViewport::Construct(const FArguments& InArgs)
 {
+	OrbitingCamera = InArgs._OrbitingCamera;
+	RootTransform = FTransform(InArgs._RootRotation, InArgs._RootOffset, InArgs._RootScale);
+
 	SEditorViewport::Construct(SEditorViewport::FArguments());
 }
 
@@ -225,6 +246,12 @@ TSharedRef<FEditorViewportClient> SNifSceneViewport::MakeEditorViewportClient()
 	Scene = MakeShared<FPreviewScene>();
 	ViewportClient = MakeShared<FNifViewportClient>(Scene, StaticCastSharedRef<SNifSceneViewport>(AsShared()));
 	ViewportClient->ViewportType = LVT_Perspective;
+	if (OrbitingCamera)
+	{
+		ViewportClient->SetCameraLock();
+		ViewportClient->SetViewLocationForOrbiting(FVector::ZeroVector);
+	}
+	ViewportClient->SetRootTransform(RootTransform);
 
 	return ViewportClient.ToSharedRef();
 }

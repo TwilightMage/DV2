@@ -21,7 +21,10 @@ public:
 	void SetSelectedEntry(const TSharedPtr<FDV2AssetTreeEntry>& InEntry) const;
 
 private:
-	void ReloadRootEntries() const;
+	void ReloadRootEntries();
+	void Search(const FText& Prompt);
+
+	static void SearchRecursive(const TSharedPtr<FDV2AssetTreeEntry>& Target, const FString& Prompt, const TFunction<void(const TSharedPtr<FDV2AssetTreeEntry>& Entry)> FindHandler);
 
 	FOnSelectionChanged OnSelectionChanged;
 	bool AllowExport = false;
@@ -29,5 +32,6 @@ private:
 
 	TSharedPtr<STreeView<TSharedPtr<FDV2AssetTreeEntry>>> TreeView;
 	TSharedPtr<FDV2AssetTreeEntry> SelectedEntry;
-	TSharedPtr<UE::Slate::Containers::TObservableArray<TSharedPtr<FDV2AssetTreeEntry>>> RootEntries;
+	TSharedPtr<UE::Slate::Containers::TObservableArray<TSharedPtr<FDV2AssetTreeEntry>>> ShowRootEntries;
+	TArray<TSharedPtr<FDV2AssetTreeEntry>> RootEntries;
 };

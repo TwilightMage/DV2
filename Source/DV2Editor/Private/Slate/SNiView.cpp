@@ -74,6 +74,7 @@ TSharedRef<SWidget> SNiView::MakeOutlinerWidget()
 		.OnSelectionChanged_Lambda([this](const TSharedPtr<FNiBlock>& InBlock)
 		{
 			SelectedBlock = InBlock;
+			NiBlockInspector->SetTargetBlock(InBlock);
 		});
 }
 
@@ -102,10 +103,13 @@ TSharedRef<SWidget> SNiView::MakeInspectorWidget()
 			blockReader.SetByteSwapping(File->ShouldByteSwapOnThisMachine());
 
 			if (SelectedBlock->Type.IsValid())
+			{
 				// TODO: if block was changed inside (passed by ref), we should emit event
-				SelectedBlock->Type->ReadFrom(*File, blockReader, SelectedBlock);
+				NiMeta::BlockReadContext Ctx(*File, SelectedBlock);
+				Ctx.Read(blockReader);
+			}
 			else
-				SelectedBlock->Error = "Unknown nif block type";
+				SelectedBlock->SetErrorManual("Unknown nif block type");
 
 			SelectedBlock->Referenced.Empty();
 			SelectedBlock->TraverseFields([&](const FNiField& Field)

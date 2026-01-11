@@ -19,7 +19,7 @@ bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneS
 	Ctx.AttachComponent(MeshComponent);
 
 	auto Data = Ctx.Block->GetField("Data").SingleReference().Resolve(File);
-	if (!Data.IsValid() || !Data->Error.IsEmpty())
+	if (!Data.IsValid() || Data->Error.IsValid())
 		return true;
 
 	auto VerticesField = Data->GetField("Vertices");
@@ -78,7 +78,7 @@ bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneS
 	MeshComponent->UpdateBounds();
 
 	auto MaterialProperty = Ctx.Block->FindBlockByType(NiMeta::GetNiObject("NiMaterialProperty"));
-	if (MaterialProperty.IsValid() && MaterialProperty->Error.IsEmpty())
+	if (MaterialProperty.IsValid() && !MaterialProperty->Error.IsValid())
 	{
 		FColor DiffuseColor = NiTools::ReadColorFloat(MaterialProperty->GetField("Diffuse Color"));
 		FColor EmissiveColor = NiTools::ReadColorFloat(MaterialProperty->GetField("Emissive Color"));
@@ -93,7 +93,7 @@ bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneS
 			BaseMaterialInstance->SetScalarParameterValue("Glossiness", Glossiness);
 
 			auto TextureProperty = Ctx.Block->FindBlockByType(NiMeta::GetNiObject("NiTexturingProperty"));
-			if (TextureProperty.IsValid() && TextureProperty->Error.IsEmpty())
+			if (TextureProperty.IsValid() && !TextureProperty->Error.IsValid())
 			{
 				if (auto TextureField = TextureProperty->FindField("Base Texture"))
 				{

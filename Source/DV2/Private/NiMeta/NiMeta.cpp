@@ -6,6 +6,7 @@
 #include "DV2Importer/DV2Settings.h"
 #include "NiMeta/NiException.h"
 #include "NiMeta/Patch.h"
+#include "NiMeta/XmlParser.h"
 #include "NiSceneComponents/NiBlockComponentConfigurator.h"
 
 FString ExpandTokens(const FString& str, const TFunction<FString(const FString& token)>& fallbackTokenResolver = nullptr)
@@ -46,7 +47,7 @@ FString ExpandTokens(const FString& str, const TFunction<FString(const FString& 
 					if (fallbackTokenResolver.IsSet())
 						substitutionRaw = fallbackTokenResolver(targetKey);
 					else
-						throw NiException(TEXT("Unknown token %s"), *targetKey);
+						throw MakeNiExceptionA("Unknown token %s", *targetKey);
 				}
 
 				tokenInfo.Last().Substitution = ExpandTokens(substitutionRaw, fallbackTokenResolver);
@@ -92,7 +93,7 @@ FString ExpandTokens(const FString& str, const TFunction<FString(const FString& 
 	return result;
 }
 
-bool ResolveExpr(const FString& str, const FNiFile& file, const TFunction<FString(const FString& fieldName)>& fieldTokenHandler)
+FString ResolveExpr(const FString& str, const FNiFile& file, const TFunction<FString(const FString& tokenName)>& tokenResolver)
 {
 	FString expression = ExpandTokens(str, [&](const FString& token) -> FString
 	{
@@ -102,8 +103,8 @@ bool ResolveExpr(const FString& str, const FNiFile& file, const TFunction<FStrin
 			return FString::FromInt(file.UserVersion);
 		if (token == "#BSVER#")
 			return "0";
-		if (fieldTokenHandler.IsSet())
-			return fieldTokenHandler(token);
+		if (tokenResolver.IsSet())
+			return tokenResolver(token);
 		return "error";
 	});
 
@@ -266,10 +267,10 @@ bool ResolveExpr(const FString& str, const FNiFile& file, const TFunction<FStrin
 #pragma warning(pop)
 	}
 
-	if (expression != "true" && expression != "false")
-		throw NiException(TEXT("Got invalid expression: \"%s\" that expanded to \"%s\""), *str, *expression);
+	if (expression.Contains("error"))
+		throw MakeNiExceptionA("Got invalid expression: \"%s\" that expanded to \"%s\"", *str, *expression);
 
-	return expression == "true";
+	return expression;
 }
 
 #pragma region Data Reading
@@ -364,9 +365,12 @@ TArray<TSharedPtr<NiMeta::version>> ParseAttrValue(const FString& str)
 	return result;
 }
 
-template <>
-TSharedPtr<NiMeta::fieldType> ParseAttrValue(const FString& str)
+TSharedPtr<NiMeta::fieldType> FieldTypeByName(const FString& str)
 {
+	if (str.IsEmpty())
+		return nullptr;
+	if (str == "#T#")
+		return NiMeta::TemplateTypePlaceholder;
 	if (auto type = NiMeta::BasicMap().FindRef(str); type.IsValid())
 		return type;
 	if (auto type = NiMeta::EnumMap().FindRef(str); type.IsValid())
@@ -376,6 +380,14 @@ TSharedPtr<NiMeta::fieldType> ParseAttrValue(const FString& str)
 	if (auto type = NiMeta::BitfieldMap().FindRef(str); type.IsValid())
 		return type;
 	if (auto type = NiMeta::StructMap().FindRef(str); type.IsValid())
+		return type;
+	return nullptr;
+}
+
+template <>
+TSharedPtr<NiMeta::fieldType> ParseAttrValue(const FString& str)
+{
+	if (auto type = FieldTypeByName(str); type.IsValid())
 		return type;
 
 	UE_LOG(LogDV2, Warning, TEXT("Referenced unknown meta type %s"), *str);
@@ -408,12 +420,68 @@ namespace NiMeta
 	FAST_MAP_IMPL(TSharedPtr<structType>, Struct)
 	FAST_MAP_IMPL(TSharedPtr<niobject>, NiObject)
 
+	FAST_MAP_IMPL(TSharedPtr<templatedStructInstance>, TemplatedStructInstance)
+
+	static TMap<FName, size_t> MetaTypeIdMap;
+	static size_t MetaTypeIdGenerator = 0;
+	size_t metaObject::staticTypeIdHelper(const char* str)
+	{
+		if (auto Id = MetaTypeIdMap.Find(str))
+			return *Id;
+		else
+			return MetaTypeIdMap.Add(str, ++MetaTypeIdGenerator);
+	}
+
+	bool field::isAvailable(const FNiFile& file) const
+	{
+		return (since.IsValid() ? file.Version >= since : true) &&
+			(until.IsValid() ? file.Version <= until : true);
+	}
+
 	basicType::basicType()
 	{
 		ToString = [](const FNiFile& file, const FNiField& field, uint32 i) -> FString
 		{
 			return FString::Printf(TEXT("%llu"), field.NumberAt<uint64>(i));
 		};
+	}
+
+#define VerifySize(ItemSize) \
+    	field.SourceItemSize = (ItemSize) * arraySize; \
+    	if (field.SourceItemSize > (reader.TotalSize() - reader.Tell())) \
+    		throw MakeNiExceptionA("Got size overflow: have %d bytes left, but requested %d", (reader.TotalSize() - reader.Tell()), field.SourceItemSize) \
+    			.AddSource("Block Meta", ctx.Block->Type) \
+    			.AddSource("Field Meta", field.Meta);
+
+	bool basicType::writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx)
+	{
+		if (name == "Ptr" || name == "Ref")
+		{
+			VerifySize(sizeof(uint32));
+			field.SetType<FNiBlockReference>(arraySize);
+			for (uint32 i = 0; i < arraySize; i++)
+				reader << field.PushValue<FNiBlockReference>().Index;
+		}
+		else if (name == "BinaryBlob")
+		{
+			field.SetType<uint8>(arraySize);
+			auto& arr = field.GetByteArray();
+			arr.SetNum(arraySize);
+			reader.ByteOrderSerialize(arr.GetData(), arraySize);
+		}
+		else if (size > 0)
+		{
+			VerifySize(size);
+			field.SetType<uint64>(arraySize);
+			for (uint32 i = 0; i < arraySize; i++)
+				reader.ByteOrderSerialize(&field.PushValue<uint64>(), size);
+		}
+		else
+			throw MakeNiException("Malformed type (not ref/ptr, binary blob or number)")
+				.AddSource("Block Meta", ctx.Block->Type)
+				.AddSource("Field Meta", field.Meta);
+
+		return true;
 	}
 
 	enumType::enumType()
@@ -425,6 +493,25 @@ namespace NiMeta
 				return option->name;
 			return "<invalid>";
 		};
+	}
+
+	bool enumType::writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx)
+	{
+		VerifySize(storage->size);
+		field.SetType<uint64>(arraySize);
+
+		for (uint32 i = 0; i < arraySize; i++)
+		{
+			uint64& enumValue = field.PushValue<uint64>();
+			reader.ByteOrderSerialize(&enumValue, storage->size);
+
+			if (!HasOption(enumValue))
+				throw MakeNiExceptionA("Provided invalid value %d for enum", enumValue)
+					.AddSource("Block Meta", ctx.Block->Type)
+					.AddSource("Field Meta", field.Meta);
+		}
+
+		return true;
 	}
 
 	const enumType::option* enumType::FindOption(uint32 value) const
@@ -445,370 +532,362 @@ namespace NiMeta
 		return false;
 	}
 
-	void structType::ProcessFields(const FNiFile& file, const TFunction<void(const TSharedPtr<field>& field)>& fieldHandler, const TFunction<FString(const FString& fieldName)>& fieldTokenHandler)
+	bool bitflagsType::writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx)
+	{
+		VerifySize(storage->size);
+		field.SetType<TSharedPtr<FNiFieldGroup>>(arraySize);
+
+		for (uint32 i = 0; i < arraySize; i++)
+		{
+			auto group = field.PushValue<TSharedPtr<FNiFieldGroup>>(MakeShared<FNiFieldGroup>());
+			group->Type = StaticCastSharedPtr<bitflagsType>(AsShared().ToSharedPtr());
+
+			uint64 bytes = 0;
+			reader.ByteOrderSerialize(&bytes, storage->size);
+
+			for (const auto& option : options)
+			{
+				FNiField optionField;
+				optionField.Meta = option;
+				optionField.SourceOffset = field.SourceOffset;
+				optionField.SourceSubOffset = option->bit;
+
+				optionField.SetType<uint64>(1);
+				optionField.PushValue<uint64>((bytes & ((uint64)1 << option->bit)) >> option->bit);
+
+				group->Fields.Add(optionField);
+			}
+		}
+
+		return true;
+	}
+
+	bool bitfieldType::writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx)
+	{
+		VerifySize(storage->size);
+		field.SetType<TSharedPtr<FNiFieldGroup>>(arraySize);
+
+		for (uint32 i = 0; i < arraySize; i++)
+		{
+			uint64 bytes = 0;
+			TArray<uint8> memberBytes;
+			memberBytes.SetNum(sizeof(bytes));
+
+			reader.ByteOrderSerialize(&bytes, storage->size);
+
+			for (const auto& member : members)
+			{
+				FNiField memberField;
+				memberField.Meta = member;
+				memberField.SourceOffset = field.SourceOffset;
+				memberField.SourceSubOffset = member->pos;
+
+				*(uint64*)memberBytes.GetData() = (bytes & member->mask) >> member->pos;
+				FMemoryReader memberReader(memberBytes);
+				check(member->type->writeField(memberField, 1, memberReader, ctx));
+
+				ctx.ContextStack.Last().FieldStorage->Fields.Add(memberField);
+			}
+		}
+
+		return false;
+	}
+
+	bool structType::writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx)
+	{
+		field.SetType<TSharedPtr<FNiFieldGroup>>(arraySize);
+
+		for (uint32 i = 0; i < arraySize; i++)
+		{
+			auto group = field.PushValue<TSharedPtr<FNiFieldGroup>>(MakeShared<FNiFieldGroup>());
+			group->Type = StaticCastSharedPtr<structType>(AsShared().ToSharedPtr());
+
+			uint32 startPos = reader.Tell();
+			ctx.ContextStack.PushLast(BlockReadContext::ContextEntry(group.Get()));
+			ProcessFields(reader, ctx);
+			ctx.ContextStack.PopLast();
+			field.SourceItemSize = reader.Tell() - startPos;
+		}
+
+		return true;
+	}
+
+	void structType::ProcessFields(FMemoryReader& reader, BlockReadContext& ctx)
 	{
 		for (const auto& field : fields)
 		{
 			try
 			{
-				if (field->since.IsValid() && file.Version < field->since)
+				if (field->since.IsValid() && ctx.File.Version < field->since)
 					continue;
-				if (field->until.IsValid() && file.Version > field->until)
+				if (field->until.IsValid() && ctx.File.Version > field->until)
 					continue;
-				if (!field->vercond.IsEmpty() && !ResolveExpr(field->vercond, file, nullptr))
+				if (!field->vercond.IsEmpty() && ResolveExpr(field->vercond, ctx.File, nullptr) != "true")
 					continue;
-				if (!field->cond.IsEmpty() && !ResolveExpr(field->cond, file, fieldTokenHandler))
+				if (!field->cond.IsEmpty() && ResolveExpr(field->cond, ctx.File, [&](const FString& tokenName)
+				{
+					return ctx.ResolveFieldToken(tokenName);
+				}) != "true")
 					continue;
 
-				fieldHandler(field);
+				ctx.HandleField(reader, field);
 			}
 			catch (NiException e)
 			{
-				throw NiException(TEXT("%s -> %hs"), *field->name, e.what());
+				throw NiException(e, field->name);
 			}
 		}
 	}
 
-	void niobject::ReadFrom(const FNiFile& File, FMemoryReader& MemoryReader, TSharedPtr<FNiBlock>& Block)
+	BlockReadContext::ContextEntry::ContextEntry(FNiBlock* block)
+		: FieldStorage(block)
+		  , MetaFieldStorage(block->Type.Get())
 	{
-		Block->Error = "Unknown error";
+	}
+
+	BlockReadContext::ContextEntry::ContextEntry(FNiFieldGroup* group)
+		: FieldStorage(group)
+		  , MetaFieldStorage(group->Type.Get())
+	{
+	}
+
+	void BlockReadContext::HandleField(FMemoryReader& reader, const TSharedPtr<field>& field)
+	{
+		if (!field->type.IsValid())
+			throw MakeNiException("Unsupported base type")
+				.AddSource("Block Meta", Block->Type)
+				.AddSource("Field Meta", field);
+
+		FNiField newField;
+		newField.Meta = field;
+		newField.SourceOffset = reader.Tell();
+
+		uint32 length = 1;
+		if (!field->lengthFieldName.IsEmpty())
+			length = FCString::IsNumeric(*field->lengthFieldName)
+				? FCString::Atoi64(*field->lengthFieldName)
+				: ContextStack.Last().FieldStorage->GetField(field->lengthFieldName).SingleNumber<uint32>();
+
+		uint32 width = 1;
+		if (!field->widthFieldName.IsEmpty())
+			width = FCString::IsNumeric(*field->widthFieldName)
+				? FCString::Atoi64(*field->widthFieldName)
+				: ContextStack.Last().FieldStorage->GetField(field->widthFieldName).SingleNumber<uint32>();
+
+		uint32 size = length * width;
+
+		if (field->type->writeField(newField, size, reader, *this))
+			ContextStack.Last().FieldStorage->Fields.Add(newField);
+	}
+
+	FString BlockReadContext::ResolveFieldToken(const FString& fieldToken)
+	{
+		FString fieldName = fieldToken.Mid(1, fieldToken.Len() - 2);
+		if (const FNiField* field = ContextStack.Last().FieldStorage->FindField(fieldName))
+		{
+			// Cannot use arrays for evaluaion
+			if (field->Size != 1)
+				return "error";
+
+			return field->Meta->type->ToString(File, *field, 0);
+		}
+		else
+		{
+			for (int32 i = 0; i < ContextStack.Last().MetaFieldStorage->NumMembers(); i++)
+			{
+				auto defaultField = ContextStack.Last().MetaFieldStorage->GetMemberAt(i);
+				if (defaultField->name == fieldName && defaultField->isAvailable(File))
+				{
+					FString defaultValue = defaultField->getDefaultValue();
+					if (!defaultValue.IsEmpty())
+						return defaultValue;
+					return "error";
+				}
+			}
+
+			return "error";
+		}
+	}
+
+	void BlockReadContext::Read(FMemoryReader& reader)
+	{
+		Block->SetError("Unknown error");
+
+		ContextStack.PushLast(ContextEntry(Block.Get()));
 
 		try
 		{
+			Block->Fields.Reset();
+
 			if (Block->Type->CustomRead.IsSet())
 			{
-				Block->Type->CustomRead(Block, MemoryReader, File);
+				Block->Type->CustomRead(Block, reader, File);
 			}
 			else
 			{
-				struct ContextEntry
-			{
-				ContextEntry(FNiBlock* block)
-					: FieldStorage(block)
-					  , MetaFieldStorage(block->Type.Get())
-				{
-				}
+				TSet<FString> inheritNames;
+				Block->Type->ProcessFields(reader, *this, inheritNames);
 
-				ContextEntry(FNiStruct* structObj)
-					: FieldStorage(structObj)
-					  , MetaFieldStorage(structObj->Type.Get())
-				{
-				}
-
-				FNiFieldStorage* FieldStorage;
-				const fieldStorage* MetaFieldStorage;
-			};
-
-			TDeque<ContextEntry> contextStack = {ContextEntry(Block.Get())};
-
-			TFunction<FString(const FString& fieldName)> fieldTokenHandler = [&](const FString& fieldToken) -> FString
-			{
-				FString fieldName = fieldToken.Mid(1, fieldToken.Len() - 2);
-				if (const FNiField* field = contextStack.Last().FieldStorage->FindField(fieldName))
-				{
-					// Cannot use arrays for evaluaion
-					if (field->Size != 1)
-						return "error";
-
-					return field->Meta->type->ToString(File, *field, 0);
-				}
+				if (reader.TotalSize() != reader.Tell())
+					Block->SetErrorManual(FString::Printf(TEXT("Data read is %lld while block size was %lld"), reader.Tell(), reader.TotalSize()));
 				else
-				{
-					for (const auto& defaultField : contextStack.Last().MetaFieldStorage->fields)
-					{
-						if (defaultField->name == fieldName &&
-							(defaultField->since.IsValid() ? File.Version >= defaultField->since : true) &&
-							(defaultField->until.IsValid() ? File.Version <= defaultField->until : true))
-						{
-							if (!defaultField->defaultValue.IsEmpty())
-								return defaultField->defaultValue;
-							return "error";
-						}
-					}
-
-					return "error";
-				}
-			};
-
-			//UE_LOG(LogDV2, Display, TEXT("Field %s with size %d on offset %lld"), *field.name, size, memoryReader.Tell());
-
-			TFunction<bool(const TSharedPtr<fieldType>&, uint32, FMemoryReader&, FNiField&)> fieldConstructor = nullptr;
-			TFunction<void(const TSharedPtr<field>&)> fieldHandler = nullptr;
-
-			fieldConstructor = [&](const TSharedPtr<fieldType>& type, uint32 size, FMemoryReader& reader, FNiField& outField) -> bool
-			{
-				uint64 bytesRemaining = reader.TotalSize() - reader.Tell();
-
-#define VerifySize(ItemSize) \
-    	outField.SourceItemSize = ItemSize * size; \
-    	if (outField.SourceItemSize > bytesRemaining) \
-    		throw NiException(TEXT("Got size overflow: have %d bytes left, but requested %d"), bytesRemaining, outField.SourceItemSize);
-
-				switch (type->GetFieldType())
-				{
-				case EFieldType::Basic:
-				{
-					auto ty = StaticCastSharedPtr<basicType>(type);
-					if (ty->name == "Ptr" || ty->name == "Ref")
-					{
-						VerifySize(sizeof(uint32));
-						outField.SetType<FNiBlockReference>(size);
-					}
-					else if (ty->name == "BinaryBlob")
-					{
-						outField.SetType<uint8>(size);
-					}
-					else if (ty->size > 0)
-					{
-						VerifySize(ty->size);
-						outField.SetType<uint64>(size);
-					}
-					else
-						throw NiException(TEXT("Malformed type (not ref/ptr, binary blob or number)"));
-				}
-				break;
-
-				case EFieldType::Enum:
-				{
-					auto ty = StaticCastSharedPtr<enumType>(type);
-					VerifySize(ty->storage->size);
-					outField.SetType<uint64>(size);
-				}
-				break;
-
-				case EFieldType::BitFlags:
-				{
-					auto ty = StaticCastSharedPtr<bitflagsType>(type);
-					VerifySize(ty->storage->size);
-					outField.SetType<TSharedPtr<FNiFieldGroup>>(size);
-				}
-					break;
-
-				case EFieldType::BitField:
-				{
-					auto ty = StaticCastSharedPtr<bitfieldType>(type);
-					VerifySize(ty->storage->size);
-					outField.SetType<TSharedPtr<FNiFieldGroup>>(size);
-				}
-				break;
-
-				case EFieldType::Struct:
-				{
-					auto ty = StaticCastSharedPtr<structType>(type);
-					outField.SetType<TSharedPtr<FNiFieldGroup>>(size);
-				}
-				break;
-
-				default:
-					throw NiException(TEXT("Unsupported base type"));
-				}
-
-				switch (type->GetFieldType())
-				{
-				case EFieldType::Basic:
-				{
-					auto ty = StaticCastSharedPtr<basicType>(type);
-
-					if (ty->name == "Ptr" || ty->name == "Ref")
-					{
-						for (uint32 i = 0; i < size; i++)
-							reader << outField.PushValue<FNiBlockReference>().Index;
-					}
-					else if (ty->name == "BinaryBlob")
-					{
-						auto& arr = outField.GetByteArray();
-						arr.SetNum(size);
-						reader.ByteOrderSerialize(arr.GetData(), size);
-					}
-					else
-					{
-						for (uint32 i = 0; i < size; i++)
-							reader.ByteOrderSerialize(&outField.PushValue<uint64>(), ty->size);
-					}
-				}
-				break;
-
-				case EFieldType::Enum:
-				{
-					auto ty = StaticCastSharedPtr<enumType>(type);
-					auto subType = ty->storage;
-					uint32 enumSize = subType->size;
-
-					for (uint32 i = 0; i < size; i++)
-					{
-						uint64& enumValue = outField.PushValue<uint64>();
-						reader.ByteOrderSerialize(&enumValue, enumSize);
-
-						if (!ty->HasOption(enumValue))
-							throw NiException(TEXT("Provided invalid value %d for enum"), enumValue);	
-					}
-				}
-				break;
-
-				case EFieldType::BitFlags:
-				{
-					auto ty = StaticCastSharedPtr<bitflagsType>(type);
-
-					for (uint32 i = 0; i < size; i++)
-					{
-						auto group = StaticCastSharedPtr<FNiBitflags>(outField.PushValue<TSharedPtr<FNiFieldGroup>>(MakeShared<FNiBitflags>()));
-						group->Type = ty;
-
-						uint64 bytes = 0;
-						reader.ByteOrderSerialize(&bytes, ty->storage->size);
-
-						for (const auto& option : ty->options)
-						{
-							FNiField optionField;
-							optionField.Meta = option;
-							optionField.SourceOffset = outField.SourceOffset;
-							optionField.SourceSubOffset = option->bit;
-
-							optionField.SetType<uint64>(1);
-							optionField.PushValue<uint64>((bytes & ((uint64)1 << option->bit)) >> option->bit);
-
-							group->Fields.Add(optionField);
-						}	
-					}
-				}
-					break;
-
-				case EFieldType::BitField:
-				{
-					auto ty = StaticCastSharedPtr<bitfieldType>(type);
-
-					for (uint32 i = 0; i < size; i++)
-					{
-						//auto group = StaticCastSharedPtr<FNiBitfield>(outField.PushValue<TSharedPtr<FNiFieldGroup>>(MakeShared<FNiBitfield>()));
-						//group->Type = ty;
-
-						uint64 bytes = 0;
-						TArray<uint8> memberBytes;
-						memberBytes.SetNum(sizeof(bytes));
-
-						reader.ByteOrderSerialize(&bytes, ty->storage->size);
-
-						for (const auto& member : ty->members)
-						{
-							FNiField memberField;
-							memberField.Meta = member;
-							memberField.SourceOffset = outField.SourceOffset;
-							memberField.SourceSubOffset = member->pos;
-
-							*(uint64*)memberBytes.GetData() = (bytes & member->mask) >> member->pos;
-							FMemoryReader memberReader(memberBytes);
-							check(fieldConstructor(member->type, 1, memberReader, memberField));
-
-							//group->Fields.Add(memberField);
-							contextStack.Last().FieldStorage->Fields.Add(memberField);
-						}	
-					}
-
-					return false;
-				}
-				break;
-
-				case EFieldType::Struct:
-				{
-					auto ty = StaticCastSharedPtr<structType>(type);
-
-					for (uint32 i = 0; i < size; i++)
-					{
-						auto group = StaticCastSharedPtr<FNiStruct>(outField.PushValue<TSharedPtr<FNiFieldGroup>>(MakeShared<FNiStruct>()));
-						group->Type = ty;
-
-						uint32 startPos = reader.Tell();
-						contextStack.PushLast(ContextEntry(group.Get()));
-						ty->ProcessFields(File, fieldHandler, fieldTokenHandler);
-						contextStack.PopLast();
-						outField.SourceItemSize = reader.Tell() - startPos;
-					}
-				}
-				break;
-				}
-
-				return true;
-			};
-
-			fieldHandler = [&](const TSharedPtr<field>& field)
-			{
-				if (!field->type.IsValid())
-					throw NiException(TEXT("Unsupported base type"));
-
-				FNiField newField;
-				newField.Meta = field;
-				newField.SourceOffset = MemoryReader.Tell();
-
-				uint32 length = 1;
-				if (!field->lengthFieldName.IsEmpty())
-					length = FCString::IsNumeric(*field->lengthFieldName)
-						? FCString::Atoi64(*field->lengthFieldName)
-						: contextStack.Last().FieldStorage->GetField(field->lengthFieldName).SingleNumber<uint32>();
-
-				uint32 width = 1;
-				if (!field->widthFieldName.IsEmpty())
-					width = FCString::IsNumeric(*field->widthFieldName)
-						? FCString::Atoi64(*field->widthFieldName)
-						: contextStack.Last().FieldStorage->GetField(field->widthFieldName).SingleNumber<uint32>();
-
-				uint32 size = length * width;
-
-				if (fieldConstructor(field->type, size, MemoryReader, newField))
-					contextStack.Last().FieldStorage->Fields.Add(newField);
-			};
-
-			Block->Fields.Reset();
-
-			TSet<FString> inheritNames;
-			ProcessFields(File, fieldHandler, fieldTokenHandler, inheritNames);
-
-			if (MemoryReader.TotalSize() != MemoryReader.Tell())
-				Block->Error = FString::Printf(TEXT("Data read is %lld while block size was %lld"), MemoryReader.Tell(), MemoryReader.TotalSize());
-			else
-				Block->Error = "";
+					Block->ClearError();
 			}
 		}
 		catch (NiException e)
 		{
-			Block->Error = e.what();
+			Block->SetError(e);
 		}
 		catch (...)
 		{
 		}
 	}
 
-	void niobject::ProcessFields(const FNiFile& file, const TFunction<void(const TSharedPtr<field>& field)>& fieldHandler, const TFunction<FString(const FString& fieldName)>& fieldTokenHandler, TSet<FString>& inheritNames)
+	void niobject::ProcessFields(FMemoryReader& reader, BlockReadContext& ctx, TSet<FString>& inheritNames)
 	{
 		if (inherit)
 		{
 			inheritNames.Add(name);
-			inherit->ProcessFields(file, fieldHandler, fieldTokenHandler, inheritNames);
+			inherit->ProcessFields(reader, ctx, inheritNames);
 		}
 
 		for (const auto& field : fields)
 		{
 			try
 			{
-				if (field->since.IsValid() && file.Version < field->since)
+				if (field->since.IsValid() && ctx.File.Version < field->since)
 					continue;
-				if (field->until.IsValid() && file.Version > field->until)
+				if (field->until.IsValid() && ctx.File.Version > field->until)
 					continue;
-				if (!field->vercond.IsEmpty() && !ResolveExpr(field->vercond, file, nullptr))
+				if (!field->vercond.IsEmpty() && ResolveExpr(field->vercond, ctx.File, nullptr) != "true")
 					continue;
-				if (!field->cond.IsEmpty() && !ResolveExpr(field->cond, file, fieldTokenHandler))
+				if (!field->cond.IsEmpty() && ResolveExpr(field->cond, ctx.File, [&](const FString& tokenName)
+				{
+					return ctx.ResolveFieldToken(tokenName);
+				}) != "true")
 					continue;
 				if (!field->excludeT.IsEmpty() && inheritNames.Contains(field->excludeT))
 					continue;
 				if (!field->onlyT.IsEmpty() && !inheritNames.Contains(field->onlyT))
 					continue;
 
-				fieldHandler(field);
+				ctx.HandleField(reader, field);
 			}
 			catch (NiException e)
 			{
-				throw NiException(TEXT("%s -> %hs"), *field->name, e.what());
+				throw NiException(e, field->name);
 			}
 		}
+	}
+
+	bool templatedStructInstance::writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx)
+	{
+		field.SetType<TSharedPtr<FNiFieldGroup>>(arraySize);
+
+		for (uint32 i = 0; i < arraySize; i++)
+		{
+			auto group = field.PushValue<TSharedPtr<FNiFieldGroup>>(MakeShared<FNiFieldGroup>());
+			group->Type = StaticCastSharedPtr<templatedStructInstance>(AsShared().ToSharedPtr());
+
+			uint32 startPos = reader.Tell();
+			ctx.ContextStack.PushLast(BlockReadContext::ContextEntry(group.Get()));
+			ProcessFields(reader, ctx, templateArg);
+			ctx.ContextStack.PopLast();
+			field.SourceItemSize = reader.Tell() - startPos;
+		}
+
+		return true;
+	}
+
+	void templatedStructInstance::ProcessFields(FMemoryReader& reader, BlockReadContext& ctx, const FString& arg)
+	{
+		for (const auto& field : baseStruct->fields)
+		{
+			try
+			{
+				auto actualField = field->type == TemplateTypePlaceholder
+					? templateSpecifiedFields[field->name]
+					: field;
+
+				FString argResolved = arg;
+				if (!arg.IsEmpty())
+				{
+					argResolved = ResolveExpr(actualField->cond, ctx.File, [&](const FString& tokenName)
+					{
+						return ctx.ResolveFieldToken(tokenName);
+					});
+				}
+
+				if (actualField->since.IsValid() && ctx.File.Version < actualField->since)
+					continue;
+				if (actualField->until.IsValid() && ctx.File.Version > actualField->until)
+					continue;
+				if (!actualField->vercond.IsEmpty() && ResolveExpr(actualField->vercond, ctx.File, nullptr) != "true")
+					continue;
+				if (!actualField->cond.IsEmpty() && ResolveExpr(actualField->cond, ctx.File, [&](const FString& tokenName)
+				{
+					if (tokenName == "#ARG#")
+						return argResolved;
+					return ctx.ResolveFieldToken(tokenName);
+				}) != "true")
+					continue;
+
+				ctx.HandleField(reader, actualField);
+			}
+			catch (NiException e)
+			{
+				throw NiException(e, field->name);
+			}
+		}
+	}
+
+	TSharedPtr<fieldType> ResolveTemplatedType(const TSharedPtr<fieldType>& BaseType, const TSharedPtr<fieldType>& TemplateType, const FString& TemplateArg)
+	{
+		if (!BaseType.IsValid())
+			return nullptr;
+
+		if (BaseType->isType<structType>())
+		{
+			if (!TemplateType.IsValid() || TemplateType == TemplateTypePlaceholder)
+				return BaseType;
+
+			FString TemplatedInstanceName = FString::Printf(TEXT("%s`%s"), *BaseType->name, *TemplateType->name);
+			auto templatedInstance = TemplatedStructInstanceMap().FindOrAdd(TemplatedInstanceName);
+			if (!templatedInstance.IsValid())
+			{
+				templatedInstance = MakeShared<templatedStructInstance>();
+				templatedInstance->name = TemplatedInstanceName;
+				templatedInstance->baseStruct = StaticCastSharedPtr<structType>(BaseType);
+				templatedInstance->templateType = TemplateType;
+				templatedInstance->templateArg = TemplateArg;
+
+				for (const auto& baseField : templatedInstance->baseStruct->fields)
+				{
+					TSharedPtr<field> specifiedField;
+					if (baseField->type == TemplateTypePlaceholder)
+					{
+						specifiedField = MakeShared<field>(*baseField);
+						specifiedField->type = TemplateType;
+					}
+					else if (baseField->templateType == "#T#")
+					{
+						specifiedField = MakeShared<field>(*baseField);
+						specifiedField->type = ResolveTemplatedType(specifiedField->type, TemplateType, baseField->templateArg);
+					}
+
+					if (!specifiedField.IsValid())
+						continue;
+
+					templatedInstance->ToString = BaseType->ToString;
+					templatedInstance->GenerateSlateWidget = BaseType->GenerateSlateWidget;
+
+					templatedInstance->templateSpecifiedFields.Add(baseField->name, specifiedField);
+				}
+			}
+
+			return templatedInstance;
+		}
+		return BaseType;
 	}
 
 	TSharedPtr<niobject> GetNiObject(const FString& name)
@@ -847,7 +926,9 @@ namespace NiMeta
 	void Reset()
 	{
 		OnReset().Broadcast();
-		
+
+		metaObject::FilePaths.Reset();
+
 		TokenMap().Reset();
 		VersionMap().Reset();
 		ModuleMap().Reset();
@@ -858,11 +939,13 @@ namespace NiMeta
 		StructMap().Reset();
 		NiObjectMap().Reset();
 
+		TemplatedStructInstanceMap().Reset();
+
 		UE_LOG(LogDV2, Display, TEXT("NIF metadata has been reset"));
 	}
 
 #pragma region Metadata Loading
-	class FNifMetadataParser : public IFastXmlCallback
+	class FNifMetadataParser : public FXmlParser
 	{
 	public:
 		struct XmlNode
@@ -882,13 +965,19 @@ namespace NiMeta
 			FString Content;
 			TSortedMap<FString, FString> Attributes;
 			TArray<TSharedPtr<XmlNode>> Children;
+			int32 Line;
 		};
 
-		virtual bool ProcessElement(const TCHAR* ElementName, const TCHAR* ElementData, int32 XmlFileLineNumber) override
+		virtual void OnComment(const FString& Comment, uint32 Line) override
+		{
+
+		}
+
+		virtual void OnTagOpen(const FString& TagName, uint32 Line) override
 		{
 			auto node = MakeShared<XmlNode>();
-			node->Name = ElementName;
-			node->Content = ElementData;
+			node->Name = TagName;
+			node->Line = Line;
 
 			if (XmlParseStack.Num() != 0)
 				XmlParseStack.Last()->Children.Add(node);
@@ -896,60 +985,45 @@ namespace NiMeta
 				XmlParseRoot = node;
 
 			XmlParseStack.PushLast(node);
-
-			return true;
 		}
 
-		virtual bool ProcessAttribute(const TCHAR* AttributeName, const TCHAR* AttributeValue) override
+		virtual void OnText(const FString& Text) override
 		{
-			XmlParseStack.Last()->Attributes.Add(AttributeName, AttributeValue);
-			return true;
+			if (XmlParseStack.IsEmpty())
+				return;
+
+			XmlParseStack.Last()->Content += "\n" + Text;
 		}
 
-		virtual bool ProcessClose(const TCHAR* ElementName) override
+		virtual void OnAttribute(const FString& Name, const FString& Value) override
+		{
+			XmlParseStack.Last()->Attributes.Add(Name, Value);
+		}
+
+		virtual void OnTagClose() override
 		{
 			XmlParseStack.PopLast();
-			return true;
 		}
-
-		virtual bool ProcessXmlDeclaration(const TCHAR* ElementData, int32 XmlFileLineNumber) override { return true; }
-		virtual bool ProcessComment(const TCHAR* Comment) override { return true; }
 
 		TSharedPtr<XmlNode> XmlParseRoot;
 		TDeque<TSharedPtr<XmlNode>> XmlParseStack;
 	};
 
-	void LoadNifMetaFile(const FString& filePath)
+	void LoadNifMetaFile(const FString& filePath, TArray<TSharedPtr<field>>& OutTemplatedFields)
 	{
 		FString FullPath = filePath;
 
-		FString xmlString;
-		if (!FFileHelper::LoadFileToString(xmlString, *FullPath))
+		FString XmlParseError;
+		uint32 XmlParseLine;
+		FNifMetadataParser XmlParser;
+
+		if (!XmlParser.Parse(*FullPath, XmlParseError, XmlParseLine))
 		{
-			UE_LOG(LogDV2, Error, TEXT("Failed to read nif meta file %s"), *filePath);
+			UE_LOG(LogDV2, Error, TEXT("Failed to parse nif metadata: %s on line %d"), *XmlParseError, XmlParseLine);
 			return;
 		}
 
-		FText parseErrorMessage;
-		int32 parseErrorLineNumber;
-		FNifMetadataParser xmlParseHandler;
-
-		if (!FFastXml::ParseXmlFile(
-			&xmlParseHandler,
-			nullptr,
-			xmlString.GetCharArray().GetData(),
-			GWarn,
-			false,
-			false,
-			parseErrorMessage,
-			parseErrorLineNumber
-			))
-		{
-			UE_LOG(LogDV2, Error, TEXT("Failed to parse nif metadata: %s on line %d"), *parseErrorMessage.ToString(), parseErrorLineNumber);
-			return;
-		}
-
-		if (!xmlParseHandler.XmlParseRoot.IsValid())
+		if (!XmlParser.XmlParseRoot.IsValid())
 		{
 			UE_LOG(LogDV2, Error, TEXT("Invalid nif metadata"));
 			return;
@@ -975,7 +1049,7 @@ namespace NiMeta
 		TArray<TSharedPtr<FNifMetadataParser::XmlNode>> bitflagsNodes;
 		TArray<TSharedPtr<FNifMetadataParser::XmlNode>> niobjectNodes;
 
-		for (const auto& child : xmlParseHandler.XmlParseRoot->Children)
+		for (const auto& child : XmlParser.XmlParseRoot->Children)
 		{
 			if (child->Name == "token")
 				tokenNodes.Add(child);
@@ -1009,12 +1083,25 @@ namespace NiMeta
 			}
 		}
 
+		auto CleanDescription = [](const FString& Description)
+		{
+			TArray<FString> Lines;
+			Description.ParseIntoArrayLines(Lines);
+			for (int32 i = 0; i < Lines.Num(); i++)
+			{
+				Lines[i].TrimStartAndEndInline();
+				if (Lines[i].IsEmpty())
+					Lines.RemoveAt(i--);
+			}
+			return FString::Join(Lines, TEXT("\n"));
+		};
+
 #define WriteNiMetaAttr(Obj, Name) Obj->Name = node->GetAttribute<decltype(Obj->Name)>(#Name);
 #define WriteNiMetaAttrN(Obj, Name1, Name2) Obj->Name1 = node->GetAttribute<decltype(Obj->Name1)>(#Name2);
 #define WriteNiMetaAttrO(Obj, Name) Obj.Name = node->GetAttribute<decltype(Obj.Name)>(#Name);
 #define WriteNiMetaAttrON(Obj, Name1, Name2) Obj.Name1 = node->GetAttribute<decltype(Obj.Name1)>(#Name2);
-#define WriteNiMetaDescription(Obj) Obj->description = node->Content;
-#define WriteNiMetaDescriptionO(Obj) Obj.description = node->Content;
+#define WriteNiMetaDescription(Obj) Obj->description = CleanDescription(node->Content);
+#define WriteNiMetaDescriptionO(Obj) Obj.description = CleanDescription(node->Content);
 
 #pragma warning(push)
 #pragma warning(disable:4456)
@@ -1026,6 +1113,8 @@ namespace NiMeta
 			WriteNiMetaAttr(version, num);
 			WriteNiMetaAttr(version, user);
 			WriteNiMetaDescription(version);
+			version->SourceFilePathIndex = metaObject::FilePaths.Num();
+			version->SourceLine = node->Line;
 
 			version->ver = FNiVersion::Parse(version->num);
 		}
@@ -1038,6 +1127,8 @@ namespace NiMeta
 			WriteNiMetaAttr(module, depends);
 			WriteNiMetaAttr(module, custom);
 			WriteNiMetaDescription(module);
+			module->SourceFilePathIndex = metaObject::FilePaths.Num();
+			module->SourceLine = node->Line;
 		}
 
 		for (const auto& node : basicNodes)
@@ -1048,6 +1139,9 @@ namespace NiMeta
 			WriteNiMetaAttr(basicType, countable);
 			WriteNiMetaAttr(basicType, size);
 			WriteNiMetaDescription(basicType);
+			basicType->SourceFilePathIndex = metaObject::FilePaths.Num();
+			basicType->SourceLine = node->Line;
+
 			basicType->SetSizeString(basicType->size, 0);
 		}
 		auto bitTy = BasicMap().FindRef("bit");
@@ -1058,6 +1152,9 @@ namespace NiMeta
 			WriteNiMetaAttr(enumType, name);
 			WriteNiMetaAttr(enumType, storage);
 			WriteNiMetaDescription(enumType);
+			enumType->SourceFilePathIndex = metaObject::FilePaths.Num();
+			enumType->SourceLine = node->Line;
+
 			enumType->SetSizeString(enumType->storage->size, 0);
 
 			for (const auto& node : node->Children)
@@ -1066,6 +1163,8 @@ namespace NiMeta
 				WriteNiMetaAttrO(option, value);
 				WriteNiMetaAttrO(option, name);
 				WriteNiMetaDescriptionO(option);
+				option.SourceFilePathIndex = metaObject::FilePaths.Num();
+				option.SourceLine = node->Line;
 			}
 		}
 
@@ -1075,6 +1174,9 @@ namespace NiMeta
 			WriteNiMetaAttr(bitflagType, name);
 			WriteNiMetaAttr(bitflagType, storage);
 			WriteNiMetaDescription(bitflagType);
+			bitflagType->SourceFilePathIndex = metaObject::FilePaths.Num();
+			bitflagType->SourceLine = node->Line;
+
 			bitflagType->SetSizeString(bitflagType->storage->size, 0);
 
 			for (const auto& node : node->Children)
@@ -1083,6 +1185,8 @@ namespace NiMeta
 				WriteNiMetaAttr(option, name);
 				WriteNiMetaAttr(option, bit);
 				WriteNiMetaDescription(option);
+				option->SourceFilePathIndex = metaObject::FilePaths.Num();
+				option->SourceLine = node->Line;
 
 				option->type = bitTy;
 			}
@@ -1094,6 +1198,9 @@ namespace NiMeta
 			WriteNiMetaAttr(bitfieldType, name);
 			WriteNiMetaAttr(bitfieldType, storage);
 			WriteNiMetaDescription(bitfieldType);
+			bitfieldType->SourceFilePathIndex = metaObject::FilePaths.Num();
+			bitfieldType->SourceLine = node->Line;
+
 			bitfieldType->SetSizeString(bitfieldType->storage->size, 0);
 
 			for (const auto& node : node->Children)
@@ -1105,6 +1212,8 @@ namespace NiMeta
 				WriteNiMetaAttr(member, pos);
 				WriteNiMetaAttr(member, mask);
 				WriteNiMetaDescription(member);
+				member->SourceFilePathIndex = metaObject::FilePaths.Num();
+				member->SourceLine = node->Line;
 			}
 		}
 
@@ -1114,13 +1223,17 @@ namespace NiMeta
 			WriteNiMetaAttr(structType, name);
 			WriteNiMetaAttr(structType, module);
 			WriteNiMetaDescription(structType);
+			structType->SourceFilePathIndex = metaObject::FilePaths.Num();
+			structType->SourceLine = node->Line;
 
 			for (const auto& node : node->Children)
 			{
 				auto& field = structType->fields.Add_GetRef(MakeShared<NiMeta::field>());
 				WriteNiMetaAttr(field, name);
-				WriteNiMetaAttrN(field, defaultValue, default);
 				WriteNiMetaAttr(field, type);
+				WriteNiMetaAttrN(field, templateType, template);
+				WriteNiMetaAttrN(field, templateArg, arg);
+				WriteNiMetaAttrN(field, defaultValue, default);
 				WriteNiMetaAttrN(field, lengthFieldName, length);
 				WriteNiMetaAttrN(field, widthFieldName, width);
 				WriteNiMetaAttr(field, vercond);
@@ -1128,6 +1241,11 @@ namespace NiMeta
 				WriteNiMetaAttr(field, since);
 				WriteNiMetaAttr(field, until);
 				WriteNiMetaDescription(field);
+				field->SourceFilePathIndex = metaObject::FilePaths.Num();
+				field->SourceLine = node->Line;
+
+				if (!field->templateType.IsEmpty() && field->templateType != "#T#" && field->type->name != "Ref" && field->type->name != "Ptr")
+					OutTemplatedFields.Add(field);
 			}
 		}
 
@@ -1140,13 +1258,17 @@ namespace NiMeta
 			WriteNiMetaAttr(niobject, module);
 			WriteNiMetaAttr(niobject, icon);
 			WriteNiMetaDescription(niobject);
+			niobject->SourceFilePathIndex = metaObject::FilePaths.Num();
+			niobject->SourceLine = node->Line;
 
 			for (const auto& node : node->Children)
 			{
 				auto& field = niobject->fields.Add_GetRef(MakeShared<NiMeta::field>());
 				WriteNiMetaAttr(field, name);
-				WriteNiMetaAttrN(field, defaultValue, default);
 				WriteNiMetaAttr(field, type);
+				WriteNiMetaAttrN(field, templateType, template);
+				WriteNiMetaAttrN(field, templateArg, arg);
+				WriteNiMetaAttrN(field, defaultValue, default);
 				WriteNiMetaAttrN(field, lengthFieldName, length);
 				WriteNiMetaAttrN(field, widthFieldName, width);
 				WriteNiMetaAttr(field, vercond);
@@ -1156,6 +1278,11 @@ namespace NiMeta
 				WriteNiMetaAttr(field, excludeT);
 				WriteNiMetaAttr(field, onlyT);
 				WriteNiMetaDescription(field);
+				field->SourceFilePathIndex = metaObject::FilePaths.Num();
+				field->SourceLine = node->Line;
+
+				if (!field->templateType.IsEmpty() && field->templateType != "#T#" && field->type->name != "Ref" && field->type->name != "Ptr")
+					OutTemplatedFields.Add(field);
 			}
 		}
 
@@ -1167,6 +1294,8 @@ namespace NiMeta
 #undef WriteNiMetaAttrON
 #undef WriteNiMetaDescription
 #undef WriteNiMetaDescriptionO
+
+		metaObject::FilePaths.Add(filePath);
 
 		uint32 TokenNumAdded = TokenMap().Num() - TokenNum;
 		uint32 VersionNumAdded = VersionMap().Num() - VersionNum;
@@ -1207,12 +1336,18 @@ namespace NiMeta
 	{
 		Reset();
 
+		TArray<TSharedPtr<field>> TemplatedFields;
 		for (const auto& path : GetDefault<UDV2Settings>()->NifMetaFiles)
 		{
-			LoadNifMetaFile(FPaths::ConvertRelativePathToFull(path.FilePath));
+			LoadNifMetaFile(FPaths::ConvertRelativePathToFull(path.FilePath), TemplatedFields);
 		}
 
 		PatchNifMeta();
+
+		for (const auto& Field : TemplatedFields)
+		{
+			Field->type = ResolveTemplatedType(Field->type, FieldTypeByName(Field->templateType), Field->templateArg);
+		}
 
 		for (TObjectIterator<UClass> It; It; ++It)
 		{

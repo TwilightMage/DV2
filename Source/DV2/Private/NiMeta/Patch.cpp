@@ -1,13 +1,19 @@
 ﻿#include "NiMeta/Patch.h"
 
+#include "CanvasItem.h"
+#include "CanvasTypes.h"
 #include "DesktopPlatformModule.h"
 #include "Editor.h"
 #include "IDesktopPlatform.h"
 #include "IImageWrapper.h"
+#include "ImageUtils.h"
 #include "ImageWriteBlueprintLibrary.h"
+#include "ImageWriteQueue.h"
+#include "ImageWriteTask.h"
 #include "Subsystems/AssetEditorSubsystem.h"
 #include "NetImmerse.h"
 #include "TextUtils.h"
+#include "Kismet/KismetRenderingLibrary.h"
 #include "NiMeta/CStreamableNode.h"
 
 namespace NiMeta
@@ -287,16 +293,80 @@ namespace NiMeta
 						if (OutFilenames.Num() != 1)
 							return;
 
-						FString SelectedExtension = FPaths::GetExtension(OutFilenames[0]);
-						const TCHAR* SelectedExtensionChr = *SelectedExtension;
+						FString SelectedExtension = FPaths::GetExtension(OutFilenames[0]).ToLower();
+						EImageFormat ImageFormat;
+						if (SelectedExtension == "png")
+							ImageFormat = EImageFormat::PNG;
+						else if (SelectedExtension == "jpg")
+							ImageFormat = EImageFormat::JPEG;
+						else if (SelectedExtension == "exr")
+							ImageFormat = EImageFormat::EXR;
+						else if (SelectedExtension == "bmp")
+							ImageFormat = EImageFormat::BMP;
 
-						FImageWriteOptions Options;
-						Options.Format = (EDesiredImageFormat)StaticEnum<EDesiredImageFormat>()->GetValueByName(SelectedExtensionChr);
-						Options.CompressionQuality = 100;
-						Options.bOverwriteFile = true;
-						Options.bAsync = true;
+						FIntPoint ImageSize = {Texture->GetSizeX(), Texture->GetSizeY()};
+						TArray64<FColor> ImageData;
 
-						UImageWriteBlueprintLibrary::ExportToDisk(Texture, OutFilenames[0], Options);
+						if (Texture->GetPixelFormat() == EPixelFormat::PF_R8 ||
+							Texture->GetPixelFormat() == EPixelFormat::PF_R8G8 ||
+							Texture->GetPixelFormat() == EPixelFormat::PF_R8G8B8 ||
+							Texture->GetPixelFormat() == EPixelFormat::PF_R8G8B8A8)
+						{
+							ImageData.SetNumZeroed(ImageSize.X * ImageSize.Y);
+							auto TextureDataRaw = (const uint8*)Texture->GetPlatformData()->Mips[0].BulkData.LockReadOnly();
+							if (Texture->GetPixelFormat() == EPixelFormat::PF_R8)
+								for (int32 i = 0; i < ImageSize.X * ImageSize.Y; i++)
+									ImageData[i] = FColor(TextureDataRaw[i], 0, 0, 255);
+							else if (Texture->GetPixelFormat() == EPixelFormat::PF_R8G8)
+								for (int32 i = 0; i < ImageSize.X * ImageSize.Y; i++)
+									ImageData[i] = FColor(TextureDataRaw[i * 2 + 0], TextureDataRaw[i * 2 + 1], 0, 255);
+							else if (Texture->GetPixelFormat() == EPixelFormat::PF_R8G8B8)
+								for (int32 i = 0; i < ImageSize.X * ImageSize.Y; i++)
+									ImageData[i] = FColor(TextureDataRaw[i * 3 + 0], TextureDataRaw[i * 3 + 1], TextureDataRaw[i * 3 + 2], 255);
+							else if (Texture->GetPixelFormat() == EPixelFormat::PF_R8G8B8)
+								for (int32 i = 0; i < ImageSize.X * ImageSize.Y; i++)
+									ImageData[i] = FColor(TextureDataRaw[i * 4 + 0], TextureDataRaw[i * 4 + 1], TextureDataRaw[i * 4 + 2], TextureDataRaw[i * 4 + 3]);
+							Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+						}
+						else if (Texture->GetPixelFormat() == EPixelFormat::PF_DXT1 ||
+							Texture->GetPixelFormat() == EPixelFormat::PF_DXT3 ||
+							Texture->GetPixelFormat() == EPixelFormat::PF_DXT5)
+						{
+							UTextureRenderTarget2D* RT = NewObject<UTextureRenderTarget2D>(GWorld);
+							RT->InitCustomFormat(ImageSize.X, ImageSize.Y, PF_B8G8R8A8, false);
+							RT->SRGB = true;
+							RT->MipGenSettings = TMGS_NoMipmaps;
+							RT->UpdateResource();
+
+							FCanvas Canvas(RT->GameThread_GetRenderTargetResource(), nullptr, FGameTime::CreateUndilated(0.0f, 0.0f), GWorld->GetFeatureLevel());
+							Canvas.Clear(FLinearColor::Black);
+							FCanvasTileItem TileItem(FVector2D(0, 0), Texture->GetResource(), FVector2D(ImageSize.X, ImageSize.Y), FLinearColor::White);
+							TileItem.BlendMode = SE_BLEND_Opaque;
+							Canvas.DrawItem(TileItem);
+							Canvas.Flush_GameThread();
+
+							TArray<FColor> OutPixels;
+							FTextureRenderTargetResource* RTResource = RT->GameThread_GetRenderTargetResource();
+							FReadSurfaceDataFlags ReadPixelFlags(RCM_UNorm);
+							ReadPixelFlags.SetLinearToGamma(false);
+							RTResource->ReadPixels(OutPixels, ReadPixelFlags);
+
+							ImageData.Append(OutPixels);
+
+							if (ImageData.Num() != ImageSize.X * ImageSize.Y)
+								return;
+						}
+
+						auto Task = MakeUnique<FImageWriteTask>();
+						Task->bOverwriteFile = true;
+						Task->Filename = OutFilenames[0];
+						Task->Format = ImageFormat;
+						Task->CompressionQuality = 100;
+						Task->PixelData = MakeUnique<TImagePixelData<FColor>>(ImageSize, MoveTemp(ImageData));
+
+						IImageWriteQueueModule& WriteQueueModule = FModuleManager::Get().LoadModuleChecked<IImageWriteQueueModule>("ImageWriteQueue");
+						IImageWriteQueue& ImageWriteQueue = WriteQueueModule.GetWriteQueue();
+						ImageWriteQueue.Enqueue(MoveTemp(Task));
 					}))
 					);
 #endif

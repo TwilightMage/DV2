@@ -2,8 +2,6 @@
 #include "NetImmerse.h"
 #include "CStreamableNode.generated.h"
 
-class FNiBlock;
-
 USTRUCT(Blueprintable, DisplayName="CStreamableNode Property")
 struct FCStreamableNodeProperty
 {

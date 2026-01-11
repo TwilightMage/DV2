@@ -3,6 +3,7 @@
 #include "NetImmerse.h"
 #include "TextUtils.h"
 #include "NiMeta/NiMeta.h"
+#include "Widgets/Input/SHyperlink.h"
 
 void SNiBlockInspector::Construct(const FArguments& InArgs)
 {
@@ -53,7 +54,7 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 		Fields.Add(MakeShared<FNiInspectorRowItem>(&field));
 	}
 
-	return SNew(SVerticalBox)
+	auto BlockInfoBox = SNew(SVerticalBox)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
@@ -84,91 +85,142 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 			SNew(STextBlock)
 			.Text(FORMAT_TEXT("SNifBlockInspector", "Data size: {0}", FText::AsNumber(TargetBlock->DataSize)))
 			.AutoWrapText(true)
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0, 5, 0, 0)
+		];
+
+	if (TargetBlock->Error.IsValid())
+	{
+		TSharedPtr<SVerticalBox> ErrorBox;
+
+		BlockInfoBox->AddSlot()
+		            .AutoHeight()
+		            .Padding(0, 5, 0, 0)
 		[
-			SNew(STextBlock)
-			.Text(FORMAT_TEXT("SNifBlockInspector", "Error: {0}", FText::FromString(TargetBlock->Error)))
-			.AutoWrapText(true)
-			.ColorAndOpacity(FColor::Red)
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0, 5, 0, 0)
-		[
-			SNew(SButton)
-			.OnClicked_Lambda([this]()
-			{
-				OnReloadBlockClicked.ExecuteIfBound();
-				return FReply::Handled();
-			})
+			SNew(SBorder)
+			.Padding(5)
 			[
-				SNew(SBox)
-				.VAlign(VAlign_Center)
-				.HAlign(HAlign_Center)
+				SAssignNew(ErrorBox, SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
 				[
 					SNew(STextBlock)
-					.Text(MAKE_TEXT("SNifBlockInspector", "Re-load block"))
+					.Text(FORMAT_TEXT("SNifBlockInspector", "Error: {0}", FText::FromString(TargetBlock->Error->Message)))
+					.AutoWrapText(true)
+					.ColorAndOpacity(FColor::Red)
 				]
+
+			]
+		];
+
+		for (const auto& Source : TargetBlock->Error->Sources)
+		{
+			ErrorBox->AddSlot()
+			.AutoHeight()
+			.Padding(0, 5, 0, 0)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(Source.Key + ": "))
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SHyperlink)
+					.Text(MAKE_TEXT("SNiBlockInspector", "Navigate"))
+					.OnNavigate_Lambda([Error = TargetBlock->Error, Name = Source.Key]
+					{
+						Error->OpenSource(Name);
+					})
+				]
+			];
+		}
+	}
+
+	BlockInfoBox->AddSlot()
+	            .AutoHeight()
+	            .Padding(0, 5, 0, 0)
+	[
+		SNew(SButton)
+		.OnClicked_Lambda([this]()
+		{
+			OnReloadBlockClicked.ExecuteIfBound();
+			return FReply::Handled();
+		})
+		[
+			SNew(SBox)
+			.VAlign(VAlign_Center)
+			.HAlign(HAlign_Center)
+			[
+				SNew(STextBlock)
+				.Text(MAKE_TEXT("SNifBlockInspector", "Re-load block"))
 			]
 		]
-		+ SVerticalBox::Slot()
-		.FillHeight(1)
-		.Padding(0, 5, 0, 0)
-		[
-			SNew(STreeView<TSharedPtr<FNiInspectorRowItem>>)
-			.TreeItemsSource(&Fields)
-			.HeaderRow(SNew(SHeaderRow)
-				+ SHeaderRow::Column("NameColumn")
-				.DefaultLabel(FText::FromString("Name"))
-				+ SHeaderRow::Column("ValueColumn")
-				.DefaultLabel(FText::FromString("Value"))
-				)
-			.OnGetChildren_Lambda([](const TSharedPtr<FNiInspectorRowItem>& item, TArray<TSharedPtr<FNiInspectorRowItem>>& outChildren)
+	];
+
+	BlockInfoBox->AddSlot()
+	            .FillHeight(1)
+	            .Padding(0, 5, 0, 0)
+	[
+		SNew(STreeView<TSharedPtr<FNiInspectorRowItem>>)
+		.TreeItemsSource(&Fields)
+		.HeaderRow(SNew(SHeaderRow)
+			+ SHeaderRow::Column("NameColumn")
+			.DefaultLabel(FText::FromString("Name"))
+			+ SHeaderRow::Column("ValueColumn")
+			.DefaultLabel(FText::FromString("Value"))
+			)
+		.OnGetChildren_Lambda([](const TSharedPtr<FNiInspectorRowItem>& item, TArray<TSharedPtr<FNiInspectorRowItem>>& outChildren)
+		{
+			if (item->CachedChildren.Num() > 0)
 			{
-				if (item->CachedChildren.Num() > 0)
-				{
-					outChildren.Append(item->CachedChildren);
-					return;
-				}
+				outChildren.Append(item->CachedChildren);
+				return;
+			}
 
-				auto length = item->Field->Size;
-				if (length == 1 || item->Index != (uint32)-1)
+			auto length = item->Field->Size;
+			if (length == 1 || item->Index != (uint32)-1)
+			{
+				// Show fields
+				if (item->Field->Meta->type->isType<NiMeta::bitflagsType>() ||
+					item->Field->Meta->type->isType<NiMeta::bitfieldType>() ||
+					item->Field->Meta->type->isType<NiMeta::structType>() ||
+					item->Field->Meta->type->isType<NiMeta::templatedStructInstance>())
 				{
-					// Show fields
-					if (!!(item->Field->Meta->type->GetFieldType() & (NiMeta::EFieldType::BitFlags | NiMeta::EFieldType::BitField | NiMeta::EFieldType::BitField)))
+					uint32 ActualIndex = item->Index == (uint32)-1 ? 0 : item->Index;
+					auto& value = item->Field->GroupAt(ActualIndex);
+
+					for (const auto& childField : value->Fields)
 					{
-						auto& value = item->Field->SingleGroup();
-
-						for (const auto& childField : value->Fields)
-						{
-							outChildren.Add(MakeShared<FNiInspectorRowItem>(&childField));
-						}
+						outChildren.Add(MakeShared<FNiInspectorRowItem>(&childField));
 					}
 				}
-				else if (length > 1)
+			}
+			else if (length > 1)
+			{
+				if (item->Field->Meta->type->name != "BinaryBlob")
 				{
-					if (item->Field->Meta->type->name != "BinaryBlob")
+					// Show list items
+					for (uint32 i = 0; i < length; ++i)
 					{
-						// Show list items
-						for (uint32 i = 0; i < length; ++i)
-						{
-							outChildren.Add(MakeShared<FNiInspectorRowItem>(item->Field, i));
-						}
+						outChildren.Add(MakeShared<FNiInspectorRowItem>(item->Field, i));
 					}
 				}
+			}
 
-				item->CachedChildren = outChildren;
-			})
-			.OnGenerateRow_Lambda([this](const TSharedPtr<FNiInspectorRowItem>& item, const TSharedRef<STableViewBase>& ownerTable)
-			{
-				return SNew(SNiBlockInspectorRow, ownerTable, item)
-					.TargetBlock(TargetBlock)
-					.TargetFile(TargetFile);
-			})
-		];
+			item->CachedChildren = outChildren;
+		})
+		.OnGenerateRow_Lambda([this](const TSharedPtr<FNiInspectorRowItem>& item, const TSharedRef<STableViewBase>& ownerTable)
+		{
+			return SNew(SNiBlockInspectorRow, ownerTable, item)
+				.TargetBlock(TargetBlock)
+				.TargetFile(TargetFile);
+		})
+	];
+
+	return BlockInfoBox;
+
 }
 
 void SNiBlockInspectorRow::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwnerTableView, const TSharedPtr<FNiInspectorRowItem>& InTarget)

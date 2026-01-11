@@ -107,7 +107,7 @@ void FCStreamableNode::ReadFrom(TSharedPtr<FNiBlock>& Block, FMemoryReader& Read
 	NewBlock->CStreamableNodes = RootNodes;
 	NewBlock->UniqueParameterTypes = UniquePropertyTypes;
 	Block = NewBlock;
-	Block->Error = "";
+	Block->ClearError();
 
 	UE_LOG(LogDV2, Display, TEXT("Parsed CStreamableNode: %d nodes total, %d root node, %d properties total, %d unique properties"), TotalNodes, RootNodes.Num(), TotalProperties, UniquePropertyTypes.Num());
 }

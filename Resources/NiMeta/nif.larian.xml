@@ -1,15 +1,6 @@
 ﻿<root>
     <module name="NiLarian" depends="NiMain" />
     
-    <struct name="CStreamableNodeParameter" module="NiLarian">
-        <field name="Type" type="uint" />
-        <field name="Value" type="string" />
-    </struct>
-    
     <niobject name="xml::dom::CStreamableNode" module="NiLarian">
-        <field name="Total Nodes" type="uint" />
-        <field name="Total Properties" type="uint" />
-        <field name="Strings Size" type="uint" />
-        <field name="Strings" type="BinaryBlob" length="Strings Size" />
     </niobject>
 </root>

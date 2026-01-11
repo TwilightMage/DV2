@@ -4,6 +4,7 @@
 #include "DV2Importer/unpack.h"
 #include "Interfaces/IMainFrameModule.h"
 #include "Slate/SDV2Explorer.h"
+#include "Slate/SItemView.h"
 #include "Slate/SKfView.h"
 #include "Slate/SNifView.h"
 #include "Slate/SXmlView.h"
@@ -79,23 +80,29 @@ TSharedPtr<SWidget> FDV2Browser::GetViewForAsset(const TSharedPtr<FDV2AssetTreeE
 	if (!asset->File.IsValid())
 		return SNullWidget::NullWidget;
 
-	if (asset->Name.EndsWith(".lua"))
+	FString Extension = FPaths::GetExtension(asset->Name);
+
+	if (Extension == "lua")
 	{
 		return GetViewForAssetText(asset);
 	}
 
-	if (asset->Name.EndsWith(".nif") ||
-		asset->Name.EndsWith(".dds"))
+	if (Extension == "nif" || Extension == "dds")
 	{
 		return SNew(SNifView, asset);
 	}
 
-	if (asset->Name.EndsWith(".kf"))
+	if (Extension == "item")
+	{
+		return SNew(SItemView, asset);
+	}
+
+	if (Extension == "kf")
 	{
 		return SNew(SKfView, asset);
 	}
 
-	if (asset->Name.EndsWith(".xml"))
+	if (Extension == "xml")
 	{
 		return SNew(SXmlView, asset);
 	}

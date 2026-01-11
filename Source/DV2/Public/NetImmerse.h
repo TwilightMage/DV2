@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include "NiMeta/NiException.h"
 #include "NiMeta/NiVersion.h"
 #include "NiMeta/NiMeta.h"
 #include "NetImmerse.generated.h"
@@ -137,7 +138,7 @@ struct DV2_API FNiField
 		Size = length * width;
 
 		//if (Size > 4096)
-		//	throw NiException(TEXT("Potentially wrong size %d"), Size);
+		//	throw MakeNiExceptionA("Potentially wrong size %d", Size);
 
 		Values.Set<TArray<T>>(TArray<T>());
 		Values.Get<TArray<T>>().Reserve(Size);
@@ -258,7 +259,8 @@ private:
 // Set of fields in block or other group
 class DV2_API FNiFieldGroup : public FNiFieldStorage
 {
-
+public:
+	TSharedPtr<NiMeta::memberStorage> Type;
 };
 
 template <typename T>
@@ -315,28 +317,18 @@ const T* FNiFieldStorage::AtPath(const FString& Path) const
 	return nullptr;
 }
 
-class FNiBitfield : public FNiFieldGroup
-{
-public:
-	TSharedPtr<NiMeta::bitfieldType> Type;
-};
-
-class FNiBitflags : public FNiFieldGroup
-{
-public:
-	TSharedPtr<NiMeta::bitflagsType> Type;
-};
-
-class FNiStruct : public FNiFieldGroup
-{
-public:
-	TSharedPtr<NiMeta::structType> Type;
-};
-
 // Hierarchy element, stores fields
 class DV2_API FNiBlock : public FNiFieldStorage, public TSharedFromThis<FNiBlock>
 {
 public:
+	struct DV2_API FError
+	{
+		void OpenSource(const FString& Name) const;
+		
+		FString Message;
+		TMap<FString, TTuple<FString, int32>> Sources;
+	};
+	
 	FString GetTitle(const FNiFile& File) const;
 	FString GetFullName(const FNiFile& File) const;
 	void TraverseReferenced(const TFunction<bool(const TSharedPtr<FNiBlock>& block, const TSharedPtr<FNiBlock>& parent)>& handler);
@@ -349,10 +341,41 @@ public:
 		return nullptr;
 	}
 
+	bool IsOfType(const FString& TypeName) const
+	{
+		return Type.IsValid() && Type->name == TypeName;
+	}
+	
+	void SetError(const FString& InMessage)
+	{
+		Error = MakeShared<FError>(InMessage);
+	}
+
+	void SetError(const FString& InMessage, const FString& InFile, int32 InLine)
+	{
+		Error = MakeShared<FError>(InMessage);
+		Error->Sources.Add("Source", {InFile, InLine});
+	}
+
+#define SetErrorManual(Message) SetError(Message, __FILE__, __LINE__)
+
+	void SetError(const NiException& InException)
+	{
+		TMap<FString, TTuple<FString, int32>> Sources;
+		InException.GetSources(Sources);
+
+		Error = MakeShared<FError>(InException.GetWhatFormatted(), Sources);
+	}
+
+	void ClearError()
+	{
+		Error = nullptr;
+	}
+
 	TSharedPtr<NiMeta::niobject> Type;
 	TArray<TSharedPtr<FNiBlock>> Referenced;
 	TArray<TSharedPtr<FNiBlock>> Children;
-	FString Error;
+	TSharedPtr<FError> Error;
 	uint32 DataOffset = 0;
 	uint32 DataSize = 0;
 	uint32 BlockIndex = 0;
@@ -403,7 +426,7 @@ struct DV2_API FNiFile
 	bool ReadFrom(FMemoryReader& memoryReader);
 	bool ShouldByteSwapOnThisMachine() const;
 
-	void SpawnScene(FSceneSpawnHandler* Handler);
+	void SpawnScene(FSceneSpawnHandler* Handler, uint32 RootBlockIndex = 0);
 
 	FString Path;
 	FString VersionString;

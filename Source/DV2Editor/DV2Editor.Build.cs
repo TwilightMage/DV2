@@ -27,6 +27,7 @@ public class DV2Editor : ModuleRules
                 "Projects",
                 "GraphEditor",
                 "BlueprintGraph",
+                "ToolWidgets",
             }
         );
     }

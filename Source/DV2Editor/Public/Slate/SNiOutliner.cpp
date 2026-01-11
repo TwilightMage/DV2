@@ -79,7 +79,7 @@ void SNiOutliner::Construct(const FArguments& InArgs, const TSharedPtr<FNiFile>&
 			[this](const TSharedPtr<FBlockWrapper>& Selection, ESelectInfo::Type Type)
 			{
 				SelectedBlock = Selection;
-				OnSelectionChanged.ExecuteIfBound(Selection->Block);
+				OnSelectionChanged.ExecuteIfBound(Selection.IsValid() ? Selection->Block : nullptr);
 			})
 	];
 }
@@ -161,7 +161,7 @@ TSharedRef<SWidget> SNiOutlinerRow::GenerateMainCell()
 		.Text(FText::FromString(Target->Block->Type->name))
 		.ToolTipText(FText::FromString(Target->Block->Type->description));
 
-	if (!Target->Block->Error.IsEmpty())
+	if (Target->Block->Error.IsValid())
 		typeNameTextBlock->SetColorAndOpacity(FColor::Red);
 
 	const FSlateBrush* Icon = nullptr;

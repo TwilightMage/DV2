@@ -3,12 +3,11 @@
 #include "DV2.h"
 #include "DV2AssetTree.h"
 #include "Divinity2Assets.h"
+#include "SourceCodeNavigation.h"
 #include "Containers/Deque.h"
 #include "DV2Importer/unpack.h"
-#include "NiMeta/CStreamableNode.h"
 #include "NiMeta/NiException.h"
 #include "NiMeta/NiMeta.h"
-#include "NiMeta/NiTools.h"
 #include "NiSceneComponents/NiBlockComponentConfigurator.h"
 
 FString NetImmerse::ReadStringNoSize(FMemoryReader& MemoryReader, uint32 SizeLimit)
@@ -17,7 +16,7 @@ FString NetImmerse::ReadStringNoSize(FMemoryReader& MemoryReader, uint32 SizeLim
 	while (!MemoryReader.AtEnd())
 	{
 		if ((uint32)result.Len() >= SizeLimit)
-			throw NiException("Size limit exceeded");
+			throw MakeNiException("Size limit exceeded");
 
 		uint8 byte;
 		MemoryReader << byte;
@@ -245,10 +244,18 @@ FNiField* FNiFieldStorage::FieldAtPrivate(const FString& Path, uint32& OutLastFi
 	return nullptr;
 }
 
+void FNiBlock::FError::OpenSource(const FString& Name) const
+{
+#if WITH_EDITOR
+	if (auto Source = Sources.Find(Name))
+		FSourceCodeNavigation::OpenSourceFile(Source->Get<0>(), Source->Get<1>());
+#endif
+}
+
 FString FNiBlock::GetTitle(const FNiFile& File) const
 {
 	if (auto NameField = FindField("Name"))
-		return StaticCastSharedPtr<FNiStruct>(NameField->SingleGroup())->Type->ToString(File, *NameField, 0);
+		return StaticCastSharedPtr<NiMeta::structType>(NameField->SingleGroup()->Type)->ToString(File, *NameField, 0);
 	return "";
 }
 
@@ -377,7 +384,7 @@ bool FNiFile::ReadFrom(FMemoryReader& memoryReader)
 	uint32 numGroups;
 	memoryReader << numGroups;
 	if (numGroups > 0)
-		throw NiException("NIF Groups are not supported");
+		throw MakeNiException("NIF Groups are not supported");
 
 	for (uint32 i = 0; i < NumBlocks; i++)
 	{
@@ -390,12 +397,16 @@ bool FNiFile::ReadFrom(FMemoryReader& memoryReader)
 		FMemoryReader blockReader(blockBytes);
 		blockReader.SetByteSwapping(memoryReader.IsByteSwapping());
 		if (Blocks[i]->Type.IsValid())
-			Blocks[i]->Type->ReadFrom(*this, blockReader, Blocks[i]);
+		{
+			NiMeta::BlockReadContext Ctx(*this, Blocks[i]);
+			Ctx.Read(blockReader);
+			Blocks[i] = Ctx.Block;
+		}
 		else
-			Blocks[i]->Error = "Unknown nif block type";
+			Blocks[i]->SetErrorManual("Unknown nif block type");
 
-		if (!Blocks[i]->Error.IsEmpty())
-			UE_LOG(LogDV2, Error, TEXT("Failed to construct nif block on index %d with error %s"), i, *Blocks[i]->Error);
+		if (Blocks[i]->Error.IsValid())
+			UE_LOG(LogDV2, Error, TEXT("Failed to construct nif block on index %d with error %s"), i, *Blocks[i]->Error->Message);
 	}
 
 	for (auto& Block : Blocks)
@@ -432,7 +443,7 @@ bool FNiFile::ShouldByteSwapOnThisMachine() const
 	return FPlatformProperties::IsLittleEndian() != IsLittleEndian;
 }
 
-void FNiFile::SpawnScene(FSceneSpawnHandler* Handler)
+void FNiFile::SpawnScene(FSceneSpawnHandler* Handler, uint32 RootBlockIndex)
 {
 	struct BlockComponentConfig
 	{
@@ -460,14 +471,14 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler)
 		BlockComponentConfigs.Add(BlockType, Config);
 	}
 
-	auto Root = Blocks[0];
+	auto Root = Blocks[RootBlockIndex];
 	Root->TraverseChildren([&](const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& Parent) -> bool
 	{
 		if (ProcessedBlocks.Contains(Block))
 			return false; // Cycle
 		ProcessedBlocks.Add(Block);
 
-		if (!Block->Error.IsEmpty())
+		if (Block->Error.IsValid())
 			return false; // Error, no need to go deeper
 
 		const auto& Config = BlockComponentConfigs[Block->Type];

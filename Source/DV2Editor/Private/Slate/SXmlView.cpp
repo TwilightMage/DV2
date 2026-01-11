@@ -1,8 +1,6 @@
 ﻿#include "Slate/SXmlView.h"
 
-#include "DV2Editor.h"
 #include "TextUtils.h"
-#include "Interfaces/IPluginManager.h"
 #include "NiMeta/CStreamableNode.h"
 
 void SXmlView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
@@ -13,12 +11,13 @@ void SXmlView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTre
 void SXmlView::OnConstructView(const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 {
 	File = UNetImmerse::OpenNiFile(InAsset, true);
-	if (File->Blocks.Num() == 0)
+	if (!ensure(File->Blocks.Num() == 1))
 		return;
 
-	ensure(File->Blocks.Num() == 1);
+	if (File->Blocks[0]->Error.IsValid())
+		return;
 
-	if (File->Blocks[0]->Type != NiMeta::GetNiObjectChecked("xml::dom::CStreamableNode"))
+	if (!File->Blocks[0]->IsOfType("xml::dom::CStreamableNode"))
 		return;
 
 	Block = StaticCastSharedPtr<FNiBlock_CStreamableNode>(File->Blocks[0]);
@@ -77,10 +76,11 @@ TSharedRef<SWidget> SXmlViewTableRow::GenerateWidgetForColumn(const FName& InCol
 				.IndentAmount(16)
 			]
 			+ SHorizontalBox::Slot()
-			.AutoWidth()
+			.FillWidth(1.0f)
 			[
 				SNew(STextBlock)
 				.Text(FCStreamableNode::GetNodeTitle(*Target))
+				.AutoWrapText(true)
 			];
 	}
 	else
@@ -92,7 +92,8 @@ TSharedRef<SWidget> SXmlViewTableRow::GenerateWidgetForColumn(const FName& InCol
 		{
 			if (Property.Type == Type)
 			return SNew(STextBlock)
-					.Text(FText::FromString(Property.Value));
+					.Text(FText::FromString(Property.Value))
+					.AutoWrapText(true);
 		}
 	}
 
