@@ -114,17 +114,40 @@ void FCStreamableNode::ReadFrom(TSharedPtr<FNiBlock>& Block, FMemoryReader& Read
 
 FText FCStreamableNode::GetNodeTitle(const FCStreamableNode& InNode)
 {
-	if (InNode.Data.Name.IsEmpty())
-		return FText::FromString(FString::Printf(TEXT("Node #%d"), InNode.Data.TypeId));
-	return FText::FromString(InNode.Data.Name);
+	FString Result;
+	if (auto Alias = Aliases.Find(InNode.Data.TypeId))
+		Result = *Alias;
+	else
+		Result = FString::Printf(TEXT("Node #%d"), InNode.Data.TypeId);
+	
+	if (!InNode.Data.Name.IsEmpty())
+		Result += " \"" + InNode.Data.Name + "\"";
+	
+	return FText::FromString(Result);
 }
 
 FText FCStreamableNode::GetPropertyTitle(uint32 InPropertyType)
 {
 	if (auto Value = Aliases.Find(InPropertyType))
-		return *Value;
+		return FText::FromString(*Value);
 	
 	return FText::FromString(FString::Printf(TEXT("Property #%d"), InPropertyType));
+}
+
+FString FCStreamableNode::GetNodeTypeName(uint32 InNodeType, const FString& NumberPrefix)
+{
+	if (auto Value = Aliases.Find(InNodeType))
+		return Value->Replace(TEXT(" "), TEXT(""));
+	
+	return NumberPrefix + FString::FromInt(InNodeType);
+}
+
+FString FCStreamableNode::GetPropertyTypeName(uint32 InPropertyType, const FString& NumberPrefix)
+{
+	if (auto Value = Aliases.Find(InPropertyType))
+		return Value->Replace(TEXT(" "), TEXT(""));
+	
+	return NumberPrefix + FString::FromInt(InPropertyType);
 }
 
 bool FCStreamableNode::TraverseTree(const TFunction<bool(const TSharedPtr<FCStreamableNode>& InNodeData)>& InHandler)
@@ -164,7 +187,7 @@ void FCStreamableNode::RefreshAliases()
 				int32 Key;
 				LexFromString(Key, *It.Key().ToString());
 				
-				FText Value = FText::FromString(It.Value().GetValue());
+				FString Value = It.Value().GetValue();
 
 				Aliases.Add(Key, Value);
 			}

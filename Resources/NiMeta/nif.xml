@@ -2010,7 +2010,7 @@
         Array of vector keys (anything that can be interpolated, except rotations).
         <field name="Num Keys" type="uint">Number of keys in the array.</field>
         <field name="Interpolation" type="KeyType" cond="#Num Keys# != 0">The key type.</field>
-        <field name="Keys" type="Key" arg="Interpolation" template="#T#" cond="#Num Keys# != 0" length="Num Keys">The keys.</field>
+        <field name="Keys" type="Key" arg="#Interpolation#" template="#T#" cond="#Num Keys# != 0" length="Num Keys">The keys.</field>
     </struct>
 
     <struct name="QuatKey" generic="true" module="NiMain">
@@ -2257,7 +2257,7 @@
         <field name="Frame Name" type="string" since="10.1.0.106">Name of the frame.</field>
         <field name="Num Keys" type="uint" until="10.1.0.0">The number of morph keys that follow.</field>
         <field name="Interpolation" type="KeyType" until="10.1.0.0">Unlike most objects, the presense of this value is not conditional on there being keys.</field>
-        <field name="Keys" type="Key" arg="Interpolation" template="float" length="Num Keys" until="10.1.0.0">The morph key frames.</field>
+        <field name="Keys" type="Key" arg="#Interpolation#" template="float" length="Num Keys" until="10.1.0.0">The morph key frames.</field>
         <field name="Legacy Weight" type="float" since="10.1.0.104" until="20.1.0.2" vercond="#BSVER# #LT# 10" />
         <field name="Vectors" type="Vector3" length="#ARG#">Morph vectors.</field>
     </struct>
@@ -4331,7 +4331,7 @@
         Wrapper for transformation animation keys.
         <field name="Num Rotation Keys" type="uint">The number of quaternion rotation keys. If the rotation type is XYZ (type 4) then this *must* be set to 1, and in this case the actual number of keys is stored in the XYZ Rotations field.</field>
         <field name="Rotation Type" type="KeyType" cond="#Num Rotation Keys# != 0">The type of interpolation to use for rotation.  Can also be 4 to indicate that separate X, Y, and Z values are used for the rotation instead of Quaternions.</field>
-        <field name="Quaternion Keys" type="QuatKey" arg="Rotation Type" template="Quaternion" length="Num Rotation Keys" cond="#Rotation Type# != 4">The rotation keys if Quaternion rotation is used.</field>
+        <field name="Quaternion Keys" type="QuatKey" arg="#Rotation Type#" template="Quaternion" length="Num Rotation Keys" cond="#Rotation Type# != 4">The rotation keys if Quaternion rotation is used.</field>
         <field name="Order" type="float" cond="#Rotation Type# == 4" until="10.1.0.0" />
         <field name="XYZ Rotations" type="KeyGroup" template="float" length="3" cond="#Rotation Type# == 4">Individual arrays of keys for rotating X, Y, and Z individually.</field>
         <field name="Translations" type="KeyGroup" template="Vector3">Translation keys.</field>
@@ -4380,7 +4380,7 @@
         <field name="Num Morphs" type="uint">Number of morphing object.</field>
         <field name="Num Vertices" type="uint">Number of vertices.</field>
         <field name="Relative Targets" type="byte" default="1">This byte is always 1 in all official files.</field>
-        <field name="Morphs" type="Morph" arg="Num Vertices" length="Num Morphs">The geometry morphing objects.</field>
+        <field name="Morphs" type="Morph" arg="#Num Vertices#" length="Num Morphs">The geometry morphing objects.</field>
     </niobject>
 
     <niobject name="NiNode" inherit="NiAVObject" module="NiMain">
@@ -4720,7 +4720,7 @@
         Wrapper for rotation animation keys.
         <field name="Num Rotation Keys" type="uint" />
         <field name="Rotation Type" type="KeyType" cond="Num Rotation Keys != 0" />
-        <field name="Quaternion Keys" type="QuatKey" arg="Rotation Type" template="Quaternion" length="Num Rotation Keys" cond="Rotation Type != 4" />
+        <field name="Quaternion Keys" type="QuatKey" arg="#Rotation Type#" template="Quaternion" length="Num Rotation Keys" cond="Rotation Type != 4" />
         <field name="XYZ Rotations" type="KeyGroup" template="float" length="3" cond="Rotation Type == 4" />
     </niobject>
 
@@ -5072,7 +5072,7 @@
         <field name="Num Bones" type="uint">Number of bones.</field>
         <field name="Skin Partition" type="Ref" template="NiSkinPartition" since="4.0.0.2" until="10.1.0.0">This optionally links a NiSkinPartition for hardware-acceleration information.</field>
         <field name="Has Vertex Weights" type="bool" since="4.2.1.0" default="true">Enables Vertex Weights for this NiSkinData.</field>
-        <field name="Bone List" type="BoneData" length="Num Bones" arg="Has Vertex Weights">Contains offset data for each node that this skin is influenced by.</field>
+        <field name="Bone List" type="BoneData" length="Num Bones" arg="#Has Vertex Weights#">Contains offset data for each node that this skin is influenced by.</field>
     </niobject>
 
     <niobject name="NiSkinInstance" inherit="NiObject" module="NiMain">
@@ -5098,7 +5098,7 @@
 		<field name="Data Size" type="uint" calc="#LEN[Vertex Data]# #MUL# Vertex Size" since="20.2.0.7" until="20.2.0.7" vercond="#BS_SSE#" />
 		<field name="Vertex Size" type="uint" calc="(Vertex Desc #BITAND# 0xF) #MUL# 4" since="20.2.0.7" until="20.2.0.7" vercond="#BS_SSE#" />
 		<field name="Vertex Desc" type="BSVertexDesc" since="20.2.0.7" until="20.2.0.7" vercond="#BS_SSE#" />
-		<field name="Vertex Data" type="BSVertexDataSSE" arg="Vertex Desc #RSH# 44" length="Data Size / Vertex Size" cond="Data Size #GT# 0" since="20.2.0.7" until="20.2.0.7" vercond="#BS_SSE#" />
+		<field name="Vertex Data" type="BSVertexDataSSE" arg="#Vertex Desc# #RSH# 44" length="Data Size / Vertex Size" cond="Data Size #GT# 0" since="20.2.0.7" until="20.2.0.7" vercond="#BS_SSE#" />
 		<field name="Partitions" type="SkinPartition" length="Num Partitions" />
     </niobject>
 
@@ -8251,8 +8251,8 @@
         <field name="Num Triangles" type="ushort" vercond="#NI_BS_LT_FO4#" />
         <field name="Num Vertices" type="ushort" />
         <field name="Data Size" type="uint" calc="((Vertex Desc #BITAND# 0xF) #MUL# Num Vertices #MUL# 4) #ADD# (Num Triangles #MUL# 6)" />
-        <field name="Vertex Data" type="BSVertexData" length="Num Vertices" arg="Vertex Desc #RSH# 44" cond="Data Size #GT# 0" vercond="#BS_GTE_130#" />
-        <field name="Vertex Data" type="BSVertexDataSSE" length="Num Vertices" arg="Vertex Desc #RSH# 44" cond="Data Size #GT# 0" vercond="#BS_SSE#" />
+        <field name="Vertex Data" type="BSVertexData" length="Num Vertices" arg="#Vertex Desc# #RSH# 44" cond="Data Size #GT# 0" vercond="#BS_GTE_130#" />
+        <field name="Vertex Data" type="BSVertexDataSSE" length="Num Vertices" arg="#Vertex Desc# #RSH# 44" cond="Data Size #GT# 0" vercond="#BS_SSE#" />
         <field name="Triangles" type="Triangle" length="Num Triangles" cond="Data Size #GT# 0" />
         <field name="Particle Data Size" type="uint" calc="(Num Vertices #MUL# 6) #ADD# (Num Triangles #MUL# 3)" vercond="#BS_SSE#" />
         <field name="Particle Vertices" type="HalfVector3" length="Num Vertices" cond="Particle Data Size #GT# 0" vercond="#BS_SSE#" />
@@ -8404,7 +8404,7 @@
         <field name="Num Combined" type="uint" />
         <field name="Combined" type="BSPackedGeomDataCombined" length="Num Combined" />
         <field name="Vertex Desc" type="BSVertexDesc" />
-        <field name="Vertex Data" type="BSVertexData" length="Num Verts" arg="Vertex Desc #RSH# 44" />
+        <field name="Vertex Data" type="BSVertexData" length="Num Verts" arg="#Vertex Desc# #RSH# 44" />
         <field name="Triangles" type="Triangle" length="Tri Count LOD0 + Tri Count LOD1 + Tri Count LOD2" />
     </struct>
 

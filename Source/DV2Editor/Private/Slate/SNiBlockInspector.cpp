@@ -58,8 +58,31 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(STextBlock)
+				.Text(MAKE_TEXT("SNifBlockInspector", "Type: "))
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(SHyperlink)
+				.Text(FText::FromString(TargetBlock->Type->name))
+				.OnNavigate_Lambda([this]
+				{
+					TargetBlock->Type->openSource();
+				})
+			]
+
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(0, 5, 0, 0)
+		[
 			SNew(STextBlock)
-			.Text(FORMAT_TEXT("SNifBlockInspector", "Type: {0}", FText::FromString(TargetBlock->Type->name)))
+			.Text(FORMAT_TEXT("SNifBlockInspector", "Block index: {0}", FText::FromString(FString::FromInt(TargetBlock->BlockIndex))))
 			.AutoWrapText(true)
 		]
 		+ SVerticalBox::Slot()
@@ -67,7 +90,7 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 		.Padding(0, 5, 0, 0)
 		[
 			SNew(STextBlock)
-			.Text(FORMAT_TEXT("SNifBlockInspector", "Block index: {0}", FText::AsNumber(TargetBlock->BlockIndex)))
+			.Text(FORMAT_TEXT("SNifBlockInspector", "Data offset: {0}", FText::FromString(FString::FromInt(TargetBlock->DataOffset))))
 			.AutoWrapText(true)
 		]
 		+ SVerticalBox::Slot()
@@ -75,15 +98,7 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 		.Padding(0, 5, 0, 0)
 		[
 			SNew(STextBlock)
-			.Text(FORMAT_TEXT("SNifBlockInspector", "Data offset: {0}", FText::AsNumber(TargetBlock->DataOffset)))
-			.AutoWrapText(true)
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(0, 5, 0, 0)
-		[
-			SNew(STextBlock)
-			.Text(FORMAT_TEXT("SNifBlockInspector", "Data size: {0}", FText::AsNumber(TargetBlock->DataSize)))
+			.Text(FORMAT_TEXT("SNifBlockInspector", "Data size: {0}", FText::FromString(FString::FromInt(TargetBlock->DataSize))))
 			.AutoWrapText(true)
 		];
 
@@ -114,8 +129,8 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 		for (const auto& Source : TargetBlock->Error->Sources)
 		{
 			ErrorBox->AddSlot()
-			.AutoHeight()
-			.Padding(0, 5, 0, 0)
+			        .AutoHeight()
+			        .Padding(0, 5, 0, 0)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
@@ -128,7 +143,7 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 				.AutoWidth()
 				[
 					SNew(SHyperlink)
-					.Text(MAKE_TEXT("SNiBlockInspector", "Navigate"))
+					.Text(MAKE_TEXT("SNiBlockInspector", "Open"))
 					.OnNavigate_Lambda([Error = TargetBlock->Error, Name = Source.Key]
 					{
 						Error->OpenSource(Name);
@@ -171,45 +186,40 @@ TSharedRef<SWidget> SNiBlockInspector::GenerateInspectorContent()
 			+ SHeaderRow::Column("ValueColumn")
 			.DefaultLabel(FText::FromString("Value"))
 			)
-		.OnGetChildren_Lambda([](const TSharedPtr<FNiInspectorRowItem>& item, TArray<TSharedPtr<FNiInspectorRowItem>>& outChildren)
+		.OnGetChildren_Lambda([](const TSharedPtr<FNiInspectorRowItem>& Item, TArray<TSharedPtr<FNiInspectorRowItem>>& OutChildren)
 		{
-			if (item->CachedChildren.Num() > 0)
+			if (Item->CachedChildren.Num() > 0)
 			{
-				outChildren.Append(item->CachedChildren);
+				OutChildren.Append(Item->CachedChildren);
 				return;
 			}
 
-			auto length = item->Field->Size;
-			if (length == 1 || item->Index != (uint32)-1)
+			if (Item->Field->Meta->isMemberArray() && !Item->IsArrayElement())
 			{
-				// Show fields
-				if (item->Field->Meta->type->isType<NiMeta::bitflagsType>() ||
-					item->Field->Meta->type->isType<NiMeta::bitfieldType>() ||
-					item->Field->Meta->type->isType<NiMeta::structType>() ||
-					item->Field->Meta->type->isType<NiMeta::templatedStructInstance>())
-				{
-					uint32 ActualIndex = item->Index == (uint32)-1 ? 0 : item->Index;
-					auto& value = item->Field->GroupAt(ActualIndex);
-
-					for (const auto& childField : value->Fields)
-					{
-						outChildren.Add(MakeShared<FNiInspectorRowItem>(&childField));
-					}
-				}
-			}
-			else if (length > 1)
-			{
-				if (item->Field->Meta->type->name != "BinaryBlob")
+				if (Item->Field->Meta->type->name != "BinaryBlob")
 				{
 					// Show list items
-					for (uint32 i = 0; i < length; ++i)
+					for (uint32 i = 0; i < Item->Field->Size; ++i)
 					{
-						outChildren.Add(MakeShared<FNiInspectorRowItem>(item->Field, i));
+						OutChildren.Add(MakeShared<FNiInspectorRowItem>(Item->Field, i));
+					}
+				}
+			}
+			else
+			{
+				// Show fields
+				if (Item->Field->IsGroup())
+				{
+					auto& Group = Item->Field->GroupAt(Item->GetActualIndex());
+
+					for (const auto& Field : Group->Fields)
+					{
+						OutChildren.Add(MakeShared<FNiInspectorRowItem>(&Field));
 					}
 				}
 			}
 
-			item->CachedChildren = outChildren;
+			Item->CachedChildren = OutChildren;
 		})
 		.OnGenerateRow_Lambda([this](const TSharedPtr<FNiInspectorRowItem>& item, const TSharedRef<STableViewBase>& ownerTable)
 		{
@@ -266,13 +276,15 @@ TSharedRef<SWidget> SNiBlockInspectorRow::GenerateWidgetForColumn(const FName& C
 			return SNew(STextBlock)
 					.Text(FText::FromString(FString::Printf(TEXT("%d bytes"), Target->Field->Size)));
 
-			if (Target->Field->Size == 0)
-			return SNew(STextBlock)
-					.Text(MAKE_TEXT("FNifField", "[empty]"));
-
-			if (Target->Field->Size > 1)
-			return SNew(STextBlock)
-					.Text(FORMAT_TEXT("FNifField", "[{0} entries]", Target->Field->Size));
+			if (Target->Field->Meta->isMemberArray())
+			{
+				if (Target->Field->Size == 0)
+				return SNew(STextBlock)
+						.Text(MAKE_TEXT("FNifField", "[empty]"));
+				else
+				return SNew(STextBlock)
+						.Text(FORMAT_TEXT("FNifField", "[{0} entries]", Target->Field->Size));
+			}
 
 			if (TargetType->GenerateSlateWidget.IsSet())
 				return TargetType->GenerateSlateWidget(*TargetFile, *Target->Field, 0);

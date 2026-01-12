@@ -11,6 +11,9 @@ struct FNiInspectorRowItem
 		: Field(InField)
 		, Index(InIndex)
 	{}
+
+	bool IsArrayElement() const { return Index != (uint32)-1; }
+	uint32 GetActualIndex() const { return IsArrayElement() ? Index : 0; }
 	
 	const FNiField* Field;
 	uint32 Index = -1;

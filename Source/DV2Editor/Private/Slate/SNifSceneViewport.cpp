@@ -19,6 +19,7 @@ FNifViewportClient::FNifViewportClient(const TSharedPtr<FPreviewScene>& InScene,
 	SkyComp->SetStaticMesh(LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/EngineSky/SM_SkySphere.SM_SkySphere")));
 	SkyComp->SetMaterial(0, LoadObject<UMaterial>(nullptr, TEXT("/Engine/EditorMaterials/AssetViewer/M_SkyBox.M_SkyBox")));
 	SkyComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	SkyComp->SetMobility(EComponentMobility::Static);
 	SkyComp->CastShadow = false;
 	SkyComp->bVisibleInRayTracing = false;
 
@@ -51,6 +52,7 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 	virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
 	{
 		auto Component = ViewportClient->SpawnComponent<USceneComponent>();
+		Component->SetMobility(EComponentMobility::Static);
 		Component->Rename(*FString::Printf(TEXT("BLOCK_%d"), Block->BlockIndex));
 		Component.FinishSpawn();
 

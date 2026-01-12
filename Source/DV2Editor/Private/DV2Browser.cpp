@@ -1,14 +1,11 @@
 ﻿#include "DV2Browser.h"
 
 #include "DV2Editor.h"
-#include "DV2Importer/unpack.h"
+#include "TextUtils.h"
+#include "FileHandlers/FFileHandlerBase.h"
 #include "Interfaces/IMainFrameModule.h"
 #include "Slate/SDV2Explorer.h"
-#include "Slate/SItemView.h"
 #include "Slate/SKfView.h"
-#include "Slate/SNifView.h"
-#include "Slate/SXmlView.h"
-#include "Widgets/Input/SMultiLineEditableTextBox.h"
 
 TSharedRef<SDockTab> FDV2Browser::Open(const FSpawnTabArgs& SpawnTabArgs)
 {
@@ -75,75 +72,44 @@ void FDV2Browser::SelectAsset(const TSharedPtr<FDV2AssetTreeEntry>& Entry, bool 
 	}
 }
 
-TSharedPtr<SWidget> FDV2Browser::GetViewForAsset(const TSharedPtr<FDV2AssetTreeEntry>& asset)
+TSharedPtr<SWidget> FDV2Browser::GetViewForAsset(const TSharedPtr<FDV2AssetTreeEntry>& asset) const
 {
 	if (!asset->File.IsValid())
 		return SNullWidget::NullWidget;
 
 	FString Extension = FPaths::GetExtension(asset->Name);
-
-	if (Extension == "lua")
+	if (auto Handler = FDV2EditorModule::Get().GetFileHandler(Extension); Handler.IsValid())
 	{
-		return GetViewForAssetText(asset);
-	}
-
-	if (Extension == "nif" || Extension == "dds")
-	{
-		return SNew(SNifView, asset);
-	}
-
-	if (Extension == "item")
-	{
-		return SNew(SItemView, asset);
-	}
-
-	if (Extension == "kf")
-	{
-		return SNew(SKfView, asset);
-	}
-
-	if (Extension == "xml")
-	{
-		return SNew(SXmlView, asset);
+		auto View = Handler->CreateViewForFile(asset);
+		if (View == SNullWidget::NullWidget)
+			return GetMessageViewForAsset("Failed to open asset");
+		return View;
 	}
 
 	return GetViewForAssetUnknown(asset);
 }
 
-TSharedPtr<SWidget> FDV2Browser::GetViewForAssetUnknown(const TSharedPtr<FDV2AssetTreeEntry>& asset) const
+TSharedPtr<SWidget> FDV2Browser::GetViewForAssetUnknown(const TSharedPtr<FDV2AssetTreeEntry>& asset)
 {
 	return SNew(SBox)
 		.HAlign(HAlign_Center)
 		.VAlign(VAlign_Center)
 		[
 			SNew(SButton)
-			.OnClicked_Lambda([this, asset]()
+			.OnClicked_Lambda([asset]()
 			{
 				asset->ExportToDisk(nullptr, false, true);
 				return FReply::Handled();
 			})
 			[
 				SNew(STextBlock)
-				.Text(NSLOCTEXT("DV2Browser", "Open in external program", "Open in external program"))
+				.Text(MAKE_TEXT("DV2Browser", "Open in external program"))
 				.Margin(5)
 			]
 		];
 }
 
-TSharedPtr<SWidget> FDV2Browser::GetViewForAssetText(const TSharedPtr<FDV2AssetTreeEntry>& asset) const
-{
-	TArray<uint8> bytes;
-	if (asset->GetAssetReference().Read(*asset->File, bytes))
-	{
-		return SNew(SMultiLineEditableTextBox)
-			.IsReadOnly(true)
-			.Text(FText::FromString(UTF8_TO_TCHAR(bytes.GetData())));
-	}
-
-	return GetMessageViewForAsset("Failed to open file");
-}
-
-TSharedPtr<SWidget> FDV2Browser::GetMessageViewForAsset(const FString& message) const
+TSharedPtr<SWidget> FDV2Browser::GetMessageViewForAsset(const FString& message)
 {
 	return SNew(SBox)
 		.HAlign(HAlign_Center)

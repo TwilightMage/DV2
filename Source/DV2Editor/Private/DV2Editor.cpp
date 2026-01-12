@@ -9,6 +9,11 @@
 #include "FDV2AssetPathCustomization.h"
 #include "FNiMaskCustomization.h"
 #include "PinFactory.h"
+#include "FileHandlers/FItemFileHandler.h"
+#include "FileHandlers/FKfFileHandler.h"
+#include "FileHandlers/FLuaFileHandler.h"
+#include "FileHandlers/FNifFileHandler.h"
+#include "FileHandlers/FXmlFileHandler.h"
 #include "NiMeta/CStreamableNode.h"
 #include "NiMeta/NiMeta.h"
 
@@ -66,6 +71,8 @@ void FDV2EditorModule::StartupModule()
 	FDV2Style::Initialize();
 
 	RegisterPropertyCustomizations();
+
+	RegisterFileHandlers();
 }
 
 void FDV2EditorModule::ShutdownModule()
@@ -87,6 +94,11 @@ void FDV2EditorModule::ShutdownModule()
 FDV2EditorModule& FDV2EditorModule::Get()
 {
 	return FModuleManager::GetModuleChecked<FDV2EditorModule>("DV2Editor");
+}
+
+TSharedPtr<FFileHandlerBase> FDV2EditorModule::GetFileHandler(const FString& Extension) const
+{
+	return FileHandlers.FindRef(Extension);
 }
 
 void FDV2EditorModule::RegisterMenus()
@@ -154,6 +166,16 @@ void FDV2EditorModule::UnregisterPropertyCustomizations()
 
 		PropertyEditor.UnregisterCustomPropertyTypeLayout(FNiMask::StaticStruct()->GetFName());
 	}
+}
+
+void FDV2EditorModule::RegisterFileHandlers()
+{
+	FileHandlers.Add("item", MakeShared<FItemFileHandler>());
+	FileHandlers.Add("kf", MakeShared<FKfFileHandler>());
+	FileHandlers.Add("lua", MakeShared<FLuaFileHandler>());
+	FileHandlers.Add("nif", MakeShared<FNifFileHandler>());
+	FileHandlers.Add("dds", MakeShared<FNifFileHandler>());
+	FileHandlers.Add("xml", MakeShared<FXmlFileHandler>());
 }
 
 #undef LOCTEXT_NAMESPACE

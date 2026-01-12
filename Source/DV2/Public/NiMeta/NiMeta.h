@@ -2,10 +2,10 @@
 #include "NiVersion.h"
 #include "Containers/Deque.h"
 
+class FNiComponentConfigurator;
 class FNiFieldStorage;
 class FNiFieldGroup;
 class FNiBlock;
-class UNiBlockComponentConfigurator;
 struct FNiField;
 struct FNiFile;
 
@@ -56,6 +56,8 @@ namespace NiMeta
 			return typeId() == staticTypeId<T>();
 		}
 
+		void openSource() const;
+
 		FString name;
 		FString description;
 
@@ -91,7 +93,7 @@ namespace NiMeta
 		virtual ~fieldType() = default;
 		virtual size_t typeId() const override { return staticTypeId<fieldType>(); }
 		
-		virtual bool writeField(FNiField& field, uint32 size, FMemoryReader& reader, BlockReadContext& ctx) = 0;
+		virtual bool writeField(FNiField& Field, uint32 ArraySize, FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg) = 0;
 
 		TFunction<FString(const FNiFile& file, const FNiField& field, uint32 i)> ToString;
 		TFunction<TSharedRef<SWidget>(const FNiFile& file, const FNiField& field, uint32 i)> GenerateSlateWidget;
@@ -113,6 +115,7 @@ namespace NiMeta
 
 		virtual bool isAvailable(const FNiFile& file) const = 0;
 		virtual FString getDefaultValue() const = 0;
+		virtual bool isMemberArray() const { return false; }
 
 		TSharedPtr<fieldType> type;
 	};
@@ -123,9 +126,10 @@ namespace NiMeta
 
 		virtual bool isAvailable(const FNiFile& file) const override;
 		virtual FString getDefaultValue() const override { return defaultValue; }
+		virtual bool isMemberArray() const override { return !lengthFieldName.IsEmpty() || !widthFieldName.IsEmpty(); }
 
 		FString templateType;
-		FString templateArg;
+		FString Arg;
 		FString defaultValue;
 		FString lengthFieldName;
 		FString widthFieldName;
@@ -171,7 +175,7 @@ namespace NiMeta
 	{
 		basicType();
 		virtual size_t typeId() const override { return staticTypeId<basicType>(); }
-		virtual bool writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx) override;
+		virtual bool writeField(FNiField& Field, uint32 ArraySize, FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg) override;
 
 		bool integral = false;
 		bool countable = false;
@@ -189,7 +193,7 @@ namespace NiMeta
 
 		enumType();
 		virtual size_t typeId() const override { return staticTypeId<enumType>(); }
-		virtual bool writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx) override;
+		virtual bool writeField(FNiField& Field, uint32 ArraySize, FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg) override;
 
 		const option* FindOption(uint32 value) const;
 		bool HasOption(uint32 value) const;
@@ -211,7 +215,7 @@ namespace NiMeta
 		};
 
 		virtual size_t typeId() const override { return staticTypeId<bitflagsType>(); }
-		virtual bool writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx) override;
+		virtual bool writeField(FNiField& Field, uint32 ArraySize, FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg) override;
 
 		virtual int32 NumMembers() const override { return options.Num(); }
 		virtual TSharedPtr<memberBase> GetMemberAt(uint32 Index) const override { return options[Index]; }
@@ -235,7 +239,7 @@ namespace NiMeta
 		};
 
 		virtual size_t typeId() const override { return staticTypeId<bitfieldType>(); }
-		virtual bool writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx) override;
+		virtual bool writeField(FNiField& Field, uint32 ArraySize, FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg) override;
 
 		virtual int32 NumMembers() const override { return members.Num(); }
 		virtual TSharedPtr<memberBase> GetMemberAt(uint32 Index) const override { return members[Index]; }
@@ -247,8 +251,8 @@ namespace NiMeta
 	struct DV2_API structType : fieldType, memberStorage
 	{
 		virtual size_t typeId() const override { return staticTypeId<structType>(); }
-		virtual bool writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx) override;
-		void ProcessFields(FMemoryReader& reader, BlockReadContext& ctx);
+		virtual bool writeField(FNiField& Field, uint32 ArraySize, FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg) override;
+		void ProcessFields(FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg);
 
 		virtual int32 NumMembers() const override { return fields.Num(); }
 		virtual TSharedPtr<memberBase> GetMemberAt(uint32 Index) const override { return fields[Index]; }
@@ -274,7 +278,7 @@ namespace NiMeta
 		{
 		}
 
-		void HandleField(FMemoryReader& reader, const TSharedPtr<field>& field);
+		void HandleField(FMemoryReader& Reader, const TSharedPtr<field>& Field, const FString& ResolvedArg);
 		FString ResolveFieldToken(const FString& fieldToken);
 		void Read(FMemoryReader& reader);
 
@@ -297,7 +301,7 @@ namespace NiMeta
 		FString icon;
 		TArray<TSharedPtr<field>> fields;
 
-		UNiBlockComponentConfigurator* ComponentConfigurator;
+		TSharedPtr<FNiComponentConfigurator> ComponentConfigurator;
 
 		TFunction<void(TSharedPtr<FNiBlock>& Block, FMemoryReader& Reader, const FNiFile& File)> CustomRead;
 		TFunction<void(FMenuBuilder& MenuBuilder, const TSharedPtr<FNiFile>& File, const TSharedPtr<FNiBlock>& Block)> BuildContextMenu;
@@ -306,20 +310,19 @@ namespace NiMeta
 	struct DV2_API templatedStructInstance : fieldType, memberStorage
 	{
 		virtual size_t typeId() const override { return staticTypeId<templatedStructInstance>(); }
-		virtual bool writeField(FNiField& field, uint32 arraySize, FMemoryReader& reader, BlockReadContext& ctx) override;
-		void ProcessFields(FMemoryReader& reader, BlockReadContext& ctx, const FString& arg);
+		virtual bool writeField(FNiField& Field, uint32 ArraySize, FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg) override;
+		void ProcessFields(FMemoryReader& Reader, BlockReadContext& Ctx, const FString& ResolvedArg);
 
 		virtual int32 NumMembers() const override { return baseStruct->NumMembers(); }
 		virtual TSharedPtr<memberBase> GetMemberAt(uint32 Index) const override { return baseStruct->GetMemberAt(Index); }
 
 		TSharedPtr<structType> baseStruct;
 		TSharedPtr<fieldType> templateType;
-		FString templateArg;
 
 		TMap<FString, TSharedPtr<field>> templateSpecifiedFields;
 	};
 
-	DV2_API TSharedPtr<fieldType> ResolveTemplatedType(const TSharedPtr<fieldType>& BaseType, const TSharedPtr<fieldType>& TemplateType, const FString& TemplateArg);
+	DV2_API TSharedPtr<fieldType> ResolveTemplatedType(const TSharedPtr<fieldType>& BaseType, const TSharedPtr<fieldType>& TemplateType);
 
 	inline static TSharedPtr<basicType> TemplateTypePlaceholder = []()
 	{
@@ -330,6 +333,7 @@ namespace NiMeta
 
 	DV2_API TSharedPtr<niobject> GetNiObject(const FString& name);
 	DV2_API TSharedPtr<niobject> GetNiObjectChecked(const FString& name);
+	DV2_API TSharedPtr<niobject> FindNiObject(const FString& name);
 
 	DV2_API TMulticastDelegate<void()>& OnReset(); // Called before reset begins
 	DV2_API TMulticastDelegate<void()>& OnReload(); // Called after reload finished

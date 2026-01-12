@@ -4,7 +4,7 @@
 
 void SItemView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 {
-	SNiView::Construct(SNiView::FArguments(), InAsset);
+	ConstructAssetView(InAsset);
 }
 
 TSharedPtr<SWidget> SItemView::MakeViewportWidget(const TSharedPtr<FNiFile>& InFile)

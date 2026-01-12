@@ -37,6 +37,9 @@ public:
 	static FText GetNodeTitle(const FCStreamableNode& InNode);
 	static FText GetPropertyTitle(uint32 InPropertyType);
 
+	static FString GetNodeTypeName(uint32 InNodeType, const FString& NumberPrefix = "");
+	static FString GetPropertyTypeName(uint32 InPropertyType, const FString& NumberPrefix = "");
+
 	bool TraverseTree(const TFunction<bool(const TSharedPtr<FCStreamableNode>& InNodeData)>& InHandler);
 
 	static void RefreshAliases();
@@ -48,7 +51,7 @@ public:
 	TWeakPtr<FCStreamableNode> Parent;
 
 private:
-	inline static TMap<int32, FText> Aliases;
+	inline static TMap<int32, FString> Aliases;
 };
 
 UCLASS(DisplayName="CStreamableNode")

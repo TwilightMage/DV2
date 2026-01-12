@@ -1,8 +1,10 @@
 ﻿#include "Slate/SDV2Explorer.h"
 
 #include "DV2AssetTree.h"
+#include "DV2Editor.h"
 #include "Divinity2Assets.h"
 #include "TextUtils.h"
+#include "FileHandlers/FFileHandlerBase.h"
 #include "Filters/SFilterSearchBox.h"
 
 void SDV2Explorer::Construct(const FArguments& InArgs)
@@ -75,6 +77,7 @@ void SDV2Explorer::Construct(const FArguments& InArgs)
 
 				FMenuBuilder MenuBuilder(true, nullptr);
 
+				MenuBuilder.BeginSection(NAME_None, MAKE_TEXT("SDV2Explorer", "Asset"));
 				if (AllowExport)
 				{
 					MenuBuilder.AddMenuEntry(
@@ -100,6 +103,13 @@ void SDV2Explorer::Construct(const FArguments& InArgs)
 								Asset->ExportToDisk(nullptr, false, true);
 							})));
 					}
+				}
+				MenuBuilder.EndSection();
+
+				FString Extension = FPaths::GetExtension(Selection[0]->Name);
+				if (auto Handler = FDV2EditorModule::Get().GetFileHandler(Extension); Handler.IsValid())
+				{
+					Handler->ConfigureMenu(Selection[0], MenuBuilder);
 				}
 
 				return MenuBuilder.MakeWidget();
@@ -148,7 +158,7 @@ void SDV2Explorer::ReloadRootEntries()
 	if (RootDir.IsValid())
 	{
 		RootEntries.Reset();
-		
+
 		if (FormatFilter.IsEmpty())
 			RootDir->Children.GenerateValueArray(RootEntries);
 		else

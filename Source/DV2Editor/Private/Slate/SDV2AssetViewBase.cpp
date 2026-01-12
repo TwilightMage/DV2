@@ -4,7 +4,7 @@
 #include "DV2AssetTree.h"
 #include "DV2Importer/unpack.h"
 
-void SDV2AssetViewBase::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
+void SDV2AssetViewBase::ConstructAssetView(const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 {
 	Asset = InAsset;
 
@@ -40,6 +40,5 @@ void SDV2AssetViewBase::FailConstruct(const FString& Message)
 
 bool SDV2AssetViewBase::ReadAsset(TArray<uint8>& OutBytes) const
 {
-	const auto& Ref = Asset->GetAssetReference();
-	return Ref.Read(*Asset->File, OutBytes);
+	return Asset->Read(OutBytes);
 }

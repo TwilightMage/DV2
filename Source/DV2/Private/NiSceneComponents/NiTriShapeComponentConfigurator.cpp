@@ -1,22 +1,19 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
 
-#include "NiSceneComponents/NiTriShapeComponent.h"
+#include "NiSceneComponents/NiTriShapeComponentConfigurator.h"
 
 #include "NetImmerse.h"
 #include "ProceduralMeshComponent.h"
 #include "DV2Importer/DV2Settings.h"
 #include "NiMeta/NiTools.h"
 
-TSharedPtr<NiMeta::niobject> UNiTriShapeComponent::GetTargetBlockType() const
-{
-	return NiMeta::GetNiObject("NiTriShape");
-}
-
-bool UNiTriShapeComponent::Configure(const FNiFile& File, const FNiFile::FSceneSpawnConfiguratorContext& Ctx)
+bool FNiTriShapeComponentConfigurator::Configure(const FNiFile& File, const FNiFile::FSceneSpawnConfiguratorContext& Ctx)
 {
 	auto MeshComponent = NewObject<UProceduralMeshComponent>(Ctx.WCO);
 	Ctx.AttachComponent(MeshComponent);
+	MeshComponent->SetMobility(EComponentMobility::Static);
+	MeshComponent->CastShadow = true;
 
 	auto Data = Ctx.Block->GetField("Data").SingleReference().Resolve(File);
 	if (!Data.IsValid() || Data->Error.IsValid())

@@ -5,12 +5,15 @@
 
 void SXmlView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 {
-	SDV2AssetViewBase::Construct(SDV2AssetViewBase::FArguments(), InAsset);
+	ConstructAssetView(InAsset);
 }
 
 void SXmlView::OnConstructView(const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 {
 	File = UNetImmerse::OpenNiFile(InAsset, true);
+	if (!File.IsValid())
+		return;
+
 	if (!ensure(File->Blocks.Num() == 1))
 		return;
 

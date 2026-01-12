@@ -10,15 +10,6 @@ struct FNiFile;
 
 class SNiView : public SDV2AssetViewBase
 {
-public:
-	SLATE_BEGIN_ARGS(SNiView)
-		{
-		}
-
-	SLATE_END_ARGS()
-
-	void Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset);
-
 protected:
 	virtual TSharedPtr<SWidget> MakeViewportWidget(const TSharedPtr<FNiFile>& File) = 0;
 	virtual void OnSelectedBlockChanged(const TSharedPtr<FNiBlock>& Block) {}

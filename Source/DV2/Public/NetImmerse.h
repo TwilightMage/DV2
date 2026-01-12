@@ -18,7 +18,6 @@ namespace NiMeta
 	struct structType;
 }
 
-class UNiBlockComponentConfigurator;
 struct FNiField;
 class FNiFieldStorage;
 struct FNiFile;
@@ -133,12 +132,9 @@ struct DV2_API FNiField
 #pragma endregion
 
 	template <typename T>
-	void SetType(uint32 length, uint32 width = 1)
+	void SetType(uint32 InSize)
 	{
-		Size = length * width;
-
-		//if (Size > 4096)
-		//	throw MakeNiExceptionA("Potentially wrong size %d", Size);
+		Size = InSize;
 
 		Values.Set<TArray<T>>(TArray<T>());
 		Values.Get<TArray<T>>().Reserve(Size);

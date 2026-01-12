@@ -5,14 +5,11 @@
 #include "Slate/SNiBlockInspector.h"
 #include "Slate/SNiOutliner.h"
 
-void SNiView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
-{
-	SDV2AssetViewBase::Construct(SDV2AssetViewBase::FArguments(), InAsset);
-}
-
 void SNiView::OnConstructView(const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 {
 	File = UNetImmerse::OpenNiFile(InAsset, true);
+	if (!File.IsValid())
+		return;
 
 	auto ViewportWidget = MakeViewportWidget(File);
 	if (!ViewportWidget.IsValid())

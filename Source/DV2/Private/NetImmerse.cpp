@@ -8,7 +8,7 @@
 #include "DV2Importer/unpack.h"
 #include "NiMeta/NiException.h"
 #include "NiMeta/NiMeta.h"
-#include "NiSceneComponents/NiBlockComponentConfigurator.h"
+#include "NiSceneComponents/NiComponentConfigurator.h"
 
 FString NetImmerse::ReadStringNoSize(FMemoryReader& MemoryReader, uint32 SizeLimit)
 {
@@ -447,7 +447,7 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler, uint32 RootBlockIndex)
 {
 	struct BlockComponentConfig
 	{
-		TDeque<UNiBlockComponentConfigurator*> Configurators;
+		TDeque<TSharedPtr<FNiComponentConfigurator>> Configurators;
 	};
 
 	TMap<TSharedPtr<NiMeta::niobject>, BlockComponentConfig> BlockComponentConfigs;
@@ -460,7 +460,7 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler, uint32 RootBlockIndex)
 		TSharedPtr<NiMeta::niobject> BT = BlockType;
 		while (BT.IsValid())
 		{
-			if (IsValid(BT->ComponentConfigurator))
+			if (BT->ComponentConfigurator.IsValid())
 			{
 				Config.Configurators.PushFirst(BT->ComponentConfigurator);
 			}

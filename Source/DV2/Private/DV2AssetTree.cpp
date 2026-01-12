@@ -76,3 +76,8 @@ FString FDV2AssetTreeEntry::GetPath() const
 		return P->GetPath() + "/" + Name;
 	return Name;
 }
+
+bool FDV2AssetTreeEntry::Read(TArray<uint8>& Bytes) const
+{
+	return GetAssetReference().Read(*File, Bytes);
+}

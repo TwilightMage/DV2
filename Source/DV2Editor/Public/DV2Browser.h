@@ -21,10 +21,9 @@ public:
 
 private:
 	void SelectAsset(const TSharedPtr<FDV2AssetTreeEntry>& Entry, bool bSkipExplorer);
-	TSharedPtr<SWidget> GetViewForAsset(const TSharedPtr<FDV2AssetTreeEntry>& asset);
-	TSharedPtr<SWidget> GetViewForAssetUnknown(const TSharedPtr<FDV2AssetTreeEntry>& asset) const;
-	TSharedPtr<SWidget> GetViewForAssetText(const TSharedPtr<FDV2AssetTreeEntry>& asset) const;
-	TSharedPtr<SWidget> GetMessageViewForAsset(const FString& message) const;
+	TSharedPtr<SWidget> GetViewForAsset(const TSharedPtr<FDV2AssetTreeEntry>& asset) const;
+	static TSharedPtr<SWidget> GetViewForAssetUnknown(const TSharedPtr<FDV2AssetTreeEntry>& asset);
+	static TSharedPtr<SWidget> GetMessageViewForAsset(const FString& message);
 
 	TSharedPtr<SDV2Explorer> AssetExplorer;
 	TSharedPtr<SBox> AssetViewPanel;

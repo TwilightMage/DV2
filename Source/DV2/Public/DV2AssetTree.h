@@ -20,6 +20,7 @@ struct DV2_API FDV2AssetTreeEntry
 
 	const FDv2AssetReference& GetAssetReference() const;
 	FString GetPath() const;
+	bool Read(TArray<uint8>& Bytes) const;
 
 	FString Name;
 	TSortedMap<FString, TSharedPtr<FDV2AssetTreeEntry>> Children;

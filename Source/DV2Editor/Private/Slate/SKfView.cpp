@@ -2,7 +2,7 @@
 
 void SKfView::Construct(const FArguments& InArgs, const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 {
-	SNiView::Construct(SNiView::FArguments(), InAsset);
+	ConstructAssetView(InAsset);
 }
 
 TSharedPtr<SWidget> SKfView::MakeViewportWidget(const TSharedPtr<FNiFile>& InFile)
