@@ -249,16 +249,14 @@ namespace NiMeta
 					FSlateIcon(),
 					FUIAction(FExecuteAction::CreateLambda([File, Block]()
 					{
-						auto Texture = UNetImmerse::LoadNiTexture(File->Path, Block->BlockIndex, true);
+						auto Texture = UNetImmerse::LoadNiTexture(File->Path, Block->BlockIndex);
 						if (!Texture)
 							return;
 
 						UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
 
 						if (AssetEditorSubsystem)
-						{
-							AssetEditorSubsystem->OpenEditorForAsset(Texture);
-						}
+							AssetEditorSubsystem->OpenEditorForAsset(Texture, EAssetTypeActivationOpenedMethod::View);
 					}))
 					);
 
@@ -268,7 +266,7 @@ namespace NiMeta
 					FSlateIcon(),
 					FUIAction(FExecuteAction::CreateLambda([File, Block]()
 					{
-						auto Texture = UNetImmerse::LoadNiTexture(File->Path, Block->BlockIndex, true);
+						auto Texture = UNetImmerse::LoadNiTexture(File->Path, Block->BlockIndex);
 						if (!Texture)
 							return;
 
@@ -283,7 +281,9 @@ namespace NiMeta
 							nullptr,
 							TEXT("Export Texture"),
 							TEXT(""),
-							TEXT("Texture.png"),
+							Block->BlockIndex == 0
+								? FPaths::ChangeExtension(FPaths::GetPathLeaf(File->Path), "png")
+								: TEXT("Texture.png"),
 							FileTypes,
 							EFileDialogFlags::None,
 							OutFilenames
@@ -372,6 +372,22 @@ namespace NiMeta
 #endif
 			};
 		}, "NiPersistentSrcTextureRendererData", "NiSourceTexture");
+
+		PatchNiObject([](niobject& entry)
+		{
+			entry.BuildContextMenu = [](FMenuBuilder& MenuBuilder, const TSharedPtr<FNiFile>& File, const TSharedPtr<FNiBlock>& Block)
+			{
+				MenuBuilder.AddMenuEntry(
+						MAKE_TEXT("NiAVObject", "Export as model"),
+						FText::GetEmpty(),
+						FSlateIcon(),
+						FUIAction(FExecuteAction::CreateLambda([File, Block]()
+						{
+							UNetImmerse::ExportSceneWithWizard(File->Path, Block->BlockIndex);
+						}))
+						);	
+			};
+		}, "NiAVObject");
 
 		PatchNiObject([](niobject& entry)
 		{

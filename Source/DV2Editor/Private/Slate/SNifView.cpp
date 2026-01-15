@@ -13,7 +13,7 @@ TSharedPtr<SWidget> SNifView::MakeViewportWidget(const TSharedPtr<FNiFile>& InFi
 {
 	SAssignNew(NifSceneViewport, SNifSceneViewport);
 
-	NifSceneViewport->GetNifViewportClient()->LoadNifFile(InFile);
+	NifSceneViewport->GetNifViewportClient()->LoadNifFile(InFile, 0, &Mask);
 
 	return NifSceneViewport;
 }
@@ -21,4 +21,9 @@ TSharedPtr<SWidget> SNifView::MakeViewportWidget(const TSharedPtr<FNiFile>& InFi
 void SNifView::OnSelectedBlockChanged(const TSharedPtr<FNiBlock>& Block)
 {
 	NifSceneViewport->GetNifViewportClient()->SetSelectedBlock(Block);
+}
+
+void SNifView::OnMaskEdited()
+{
+	NifSceneViewport->GetNifViewportClient()->LoadNifFile(GetFile(), 0, &Mask);
 }

@@ -4,6 +4,7 @@
 #include "NiMeta/NiMeta.h"
 #include "NetImmerse.generated.h"
 
+class UProceduralMeshComponent;
 struct Dv2File;
 
 namespace NiMeta
@@ -320,11 +321,11 @@ public:
 	struct DV2_API FError
 	{
 		void OpenSource(const FString& Name) const;
-		
+
 		FString Message;
 		TMap<FString, TTuple<FString, int32>> Sources;
 	};
-	
+
 	FString GetTitle(const FNiFile& File) const;
 	FString GetFullName(const FNiFile& File) const;
 	void TraverseReferenced(const TFunction<bool(const TSharedPtr<FNiBlock>& block, const TSharedPtr<FNiBlock>& parent)>& handler);
@@ -341,7 +342,20 @@ public:
 	{
 		return Type.IsValid() && Type->name == TypeName;
 	}
-	
+
+	bool IsChildOfType(const FString& TypeName) const
+	{
+		auto Ty = Type;
+		while (Ty.IsValid())
+		{
+			if (Ty->name == TypeName)
+				return true;
+			Ty = Ty->inherit;
+		}
+		
+		return false;
+	}
+
 	void SetError(const FString& InMessage)
 	{
 		Error = MakeShared<FError>(InMessage);
@@ -381,9 +395,94 @@ private:
 	void TraverseChildrenPrivate(const TFunction<bool(const TSharedPtr<FNiBlock>& block, const TSharedPtr<FNiBlock>& parent)>& handler, const TSharedPtr<FNiBlock>& parent);
 };
 
+USTRUCT()
+struct FNiMask
+{
+	GENERATED_BODY()
+
+	static FNiMask CreateBlack() { return FNiMask{.bIsWhiteList = true}; }
+	static FNiMask CreateWhite() { return FNiMask{.bIsWhiteList = false}; }
+
+	bool ShouldShow(uint32 InBlockIndex) const
+	{
+		return bIsWhiteList
+			? BlockIndexList.Contains(InBlockIndex)
+			: !BlockIndexList.Contains(InBlockIndex);
+	}
+
+	void Toggle(uint32 InBlockIndex)
+	{
+		if (BlockIndexList.Remove(InBlockIndex) == 0)
+			BlockIndexList.Add(InBlockIndex);
+	}
+
+	void Reset()
+	{
+		BlockIndexList.Reset();
+	}
+
+	UPROPERTY()
+	TSet<uint32> BlockIndexList;
+
+	UPROPERTY()
+	bool bIsWhiteList = false;
+};
+
 struct DV2_API FNiFile
 {
-	struct FSceneSpawnConfiguratorContext
+	struct DV2_API FTextureDescriptor
+	{
+		using TTexturePtr = TStrongObjectPtr<UTexture2D>;
+		using TNiBlock = struct
+		{
+			FString AssetPath;
+			uint32 BlockIndex;
+		};
+		using TAssetPath = FString;
+
+		bool IsSet() const;
+		UTexture2D* ResolveTexture() const;
+
+		static FTextureDescriptor CreateFromTexture(UTexture2D* Texture);
+		static FTextureDescriptor CreateFromNiBlock(const FString& AssetPath, uint32 BlockIndex);
+		static FTextureDescriptor CreateFromAssetPath(const FString& AssetPath);
+
+		bool operator==(const FTextureDescriptor& Rhs) const;
+
+		TVariant<nullptr_t, TTexturePtr, TNiBlock, TAssetPath> Data = TVariant<nullptr_t, TTexturePtr, TNiBlock, TAssetPath>(TInPlaceType<nullptr_t>());
+	};
+
+	struct DV2_API FMaterialDescriptor
+	{
+		FLinearColor DiffuseColor = FLinearColor::White;
+		FLinearColor EmissiveColor = FLinearColor::Black;
+		float Glossiness = 0;
+
+		FTextureDescriptor DiffuseTexture;
+		FTextureDescriptor GlossinessTexture;
+		FTextureDescriptor NormalTexture;
+
+		static const FMaterialDescriptor DefaultMaterial;
+
+		bool operator==(const FMaterialDescriptor& Rhs) const;
+	};
+
+	struct DV2_API FMeshDescriptor
+	{
+		TArray<FVector> Vertices;
+		TArray<FVector> Normals;
+		TArray<FVector> Tangents;
+		TArray<FVector2D> UVs[4];
+		TArray<int32> Triangles;
+
+		bool CheckValid() const;
+
+		void AddSectionToProceduralMeshComponent(UProceduralMeshComponent* PMC) const;
+
+		FMaterialDescriptor Material;
+	};
+
+	struct FSceneSpawnHandlerContext
 	{
 		friend FNiFile;
 
@@ -392,11 +491,11 @@ struct DV2_API FNiFile
 
 		struct FCallbacks
 		{
-			TFunction<void(USceneComponent* Component)> OnAttachComponent;
+			TFunction<void(const FMeshDescriptor& Mesh)> OnAttachMesh;
 			TFunction<void(const FTransform& Transform)> OnSetTransform;
 		};
 
-		void AttachComponent(USceneComponent* Component) const { return Callbacks.OnAttachComponent(Component); }
+		void AttachMesh(const FMeshDescriptor& Mesh) const { return Callbacks.OnAttachMesh(Mesh); }
 		void SetTransform(const FTransform& Transform) const { Callbacks.OnSetTransform(Transform); }
 
 	private:
@@ -407,15 +506,33 @@ struct DV2_API FNiFile
 	{
 		enum class EBlockEnterResult
 		{
-			Continue,     // As is
+			Continue, // As is
 			SkipChildren, // Setup block but skip children, exit with success = true
-			SkipThis,     // Skip this block, exit with success = false
+			SkipThis, // Skip this block, exit with success = false
 		};
 
-		virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) = 0;
-		virtual void OnExitBlock(bool bSuccess) = 0;
-		virtual void OnAttachSubComponent(USceneComponent* SubComponent) = 0;
-		virtual void OnSetComponentTransform(const FTransform& Transform) = 0;
+		const FNiMask* Mask = nullptr;
+
+		virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock)
+		{
+			if (Mask && !Mask->ShouldShow(Block->BlockIndex))
+				return EBlockEnterResult::SkipThis;
+
+			return EBlockEnterResult::Continue;
+		}
+		
+		virtual void OnExitBlock(bool bSuccess)
+		{
+		}
+		
+		virtual void OnAttachMesh(const FMeshDescriptor& Mesh)
+		{
+		}
+		
+		virtual void OnSetComponentTransform(const FTransform& Transform)
+		{
+		}
+		
 		virtual UObject* GetWCO() = 0;
 	};
 
@@ -447,11 +564,103 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Divinity 2|Net Immerse")
 	static UTexture2D* LoadNiTexture(UPARAM(meta=(DV2AssetPath))
-	                                 const FString& FilePath, int32 BlockIndex, bool ForceLoadFile);
+	                                 const FString& FilePath, int32 BlockIndex);
+
+	UFUNCTION(BlueprintCallable, Category="Divinity 2|Net Immerse")
+	static void ExportScene(UPARAM(meta=(DV2AssetPath))
+	                      const FString& FilePath, int32 BlockIndex, const FString& DiskPath);
+
+	UFUNCTION(BlueprintCallable, Category="Divinity 2|Net Immerse")
+	static void ExportSceneWithWizard(UPARAM(meta=(DV2AssetPath))
+	                      const FString& FilePath, int32 BlockIndex);
 
 private:
 	inline static TMap<FString, TWeakPtr<FNiFile>> LoadedNiFiles;
 
 	UPROPERTY()
 	TMap<FName, UTexture2D*> LoadedNiTextures;
+};
+
+// Base class for constructing virtual tree from NI scene
+template <typename TData>
+struct FVirtualNiSceneSpawnHandler : FNiFile::FSceneSpawnHandler
+{
+	struct HierarchyNode
+	{
+		FTransform RelativeTransform;
+		FTransform GlobalTransform;
+		TArray<TSharedPtr<HierarchyNode>> Children;
+		TData Data;
+	};
+
+	TSharedPtr<HierarchyNode> RootNode;
+	TMap<TSharedPtr<FNiBlock>, TSharedPtr<HierarchyNode>> BlockToNodeMap;
+
+	struct
+	{
+		TSharedPtr<FNiBlock> Block;
+		TSharedPtr<FNiBlock> ParentBlock;
+		TSharedPtr<HierarchyNode> Node;
+	} Current;
+
+	virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
+	{
+		auto Result = FSceneSpawnHandler::OnEnterBlock(Block, ParentBlock);
+		if (Result != EBlockEnterResult::Continue)
+			return Result;
+		
+		Current.Block = Block;
+		Current.ParentBlock = ParentBlock;
+		Current.Node = MakeShared<HierarchyNode>();
+		Current.Node->Children.Reserve(Block->Children.Num());
+		return EBlockEnterResult::Continue;
+	}
+
+	virtual void OnExitBlock(bool bSuccess) override
+	{
+		if (bSuccess)
+		{
+			if (!RootNode.IsValid())
+				RootNode = Current.Node;
+
+			if (Current.ParentBlock.IsValid())
+				BlockToNodeMap[Current.ParentBlock]->Children.Add(Current.Node);
+
+			BlockToNodeMap.Add(Current.Block, Current.Node);
+		}
+	}
+
+	virtual void OnSetComponentTransform(const FTransform& Transform) override
+	{
+		Current.Node->RelativeTransform = Transform;
+	}
+
+	bool HasAnyObjects() const
+	{
+		return RootNode.IsValid();
+	}
+
+	void Finalize()
+	{
+		FinalizeNode(*RootNode, nullptr);
+	}
+	
+protected:
+	virtual void OnFinalizeNode(HierarchyNode& Node)
+	{
+	}
+
+private:
+	void FinalizeNode(HierarchyNode& Node, const FTransform* ParentTransform)
+	{
+		if (ParentTransform)
+			Node.GlobalTransform = Node.RelativeTransform * *ParentTransform;
+		else
+			Node.GlobalTransform = Node.RelativeTransform;
+
+		OnFinalizeNode(Node);
+
+		for (auto& Child : Node.Children)
+			FinalizeNode(*Child, &Node.GlobalTransform);
+	}
 };

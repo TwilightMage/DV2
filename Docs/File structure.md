@@ -1,0 +1,31 @@
+﻿- `Books` - Books contents
+- `Localisation` - Localization data
+- `MdlMan2` - Resources for character creator
+- `Scripts` - Lua scripts
+- `Sound` - Compiled WWise sound banks .bnk
+- `Vegetation` - SpeedTree folder, .spt files are for speedtree 4.x (2010 era)
+- `Win32` - Resources
+  - `BinaryShaders` - Compiled shaders
+  - `Characters` - Character models
+  - `CompiledAssets` - Detailed static meshes that are loaded dynamically
+  - `DungeonBlocks` - Seem to contain single xml file for all dungeon block data
+  - `Effects` - Seem to contain effects as kind of "particle systems"
+  - `Items` - Props meshes
+  - `Physics` - NVIDIA PhysX Binary Scene files (nxb)
+  - `Textures` - Textures for almost all the meshes in the game, except for terrain and some vegetation
+- `World` - Game locations and sub-locations
+  - `<location name>` - Specific location folder. Each location consist of Main region and multiple sub-regions (building interiors, caves)
+    - `Main` - Main region data
+      - `AI` - Seem to be AI behavior folder
+      - `CameraMove` - Probably, camera movement animations
+      - `Cubemaps` - Skyboxes
+      - `Lights` - Light setups for different states (time of day)
+      - `Meshes` - Seem to contain single folder for terrain mesh parts with different levels of detail
+      - `StaticMeshes.nif` - Basic region "skeleton". Contains low LOD meshes, sometimes with textures. When game loads high LOD meshes, they are placed on locations from this file
+      - `TerrainTextures` - Textures for terrain patches
+      - `Vegetation` - Grass map, folder contain tiles
+        - `Red` channel - Probably, vegetation group mask. Different byte values mean different groups
+        - `Green` channel - Could be amount
+        - `Blue` channel - Could be mask, but that's questionable because sometimes this channel is not white or black
+        - `Alpha` channel - Somehow related to terrain height, but cycled within 256 byte range, i.e. if you see black pixels after slope, it probably went beyoud 256 range (257 for instance, turned into 1). Probably used to determine terrain slope angle at specific location.
+    - `Subregions` - Sub-regions, sub-region folder structure same as main region

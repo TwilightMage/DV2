@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "SEditorViewport.h"
 
+struct FNiMask;
 class UProceduralMeshComponent;
 class FNiBlock;
 struct FNiFile;
@@ -8,12 +9,12 @@ class SNifSceneViewport;
 
 class FNifViewportClient : public FEditorViewportClient
 {
-	friend struct FSceneSpawnHandler;
+	friend struct FViewportSceneSpawnHandler;
 
 public:
 	FNifViewportClient(const TSharedPtr<FPreviewScene>& InScene, const TSharedPtr<SNifSceneViewport>& Widget);
 
-	void LoadNifFile(const TSharedPtr<FNiFile>& NifFile, uint32 RootBlockIndex = 0);
+	void LoadNifFile(const TSharedPtr<FNiFile>& NifFile, uint32 RootBlockIndex = 0, const FNiMask* Mask = nullptr);
 
 	virtual void Draw(const FSceneView* View, FPrimitiveDrawInterface* PDI) override;
 	virtual void Draw(FViewport* InViewport, FCanvas* Canvas) override;
@@ -33,64 +34,6 @@ private:
 
 	USceneComponent* BlockToComponent(const TSharedPtr<FNiBlock>& Block) const { return BlockToComponentMap.FindRef(Block); }
 	TSharedPtr<FNiBlock> ComponentToBlock(const USceneComponent* Component) const { return ComponentToBlockMap.FindRef(Component); }
-
-	template <typename T>
-	struct TSpawnedComponent
-	{
-		TSpawnedComponent(T* InComponent, FNifViewportClient* InClient)
-			: Component(InComponent)
-			  , Client(InClient)
-		{
-		}
-
-		~TSpawnedComponent()
-		{
-			if (!bIsCancelled)
-			{
-				FinishSpawn();
-			}
-		}
-
-		void CancelSpawn()
-		{
-			if (ensureAlways(!bIsCancelled))
-			{
-				bIsCancelled = true;
-				Client->GeneratedNifComponents.Remove(Component);
-			}
-		}
-
-		void FinishSpawn()
-		{
-			if (!bIsFinished)
-			{
-				bIsFinished = true;
-				Client->GetPreviewScene()->AddComponent(Component, Component->GetRelativeTransform());
-			}
-		}
-
-		T* operator->() { return Component; }
-		const T* operator->() const { return Component; }
-
-		T& operator*() { return *Component; }
-		const T& operator*() const { return *Component; }
-
-		operator T*() { return Component; }
-
-		T* Component;
-		FNifViewportClient* Client;
-		bool bIsCancelled = false;
-		bool bIsFinished = false;
-	};
-
-	template <typename T, typename... TArgs>
-	TSpawnedComponent<T> SpawnComponent(TArgs... Args)
-	{
-		T* Result = NewObject<T>(GetWorld(), Args...);
-		GeneratedNifComponents.Add(Result);
-
-		return TSpawnedComponent<T>(Result, this);
-	}
 
 	TSharedPtr<FNiBlock> SelectedBlock;
 	USceneComponent* CachedSelectedComponent;

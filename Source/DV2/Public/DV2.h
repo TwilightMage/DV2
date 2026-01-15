@@ -4,7 +4,7 @@
 
 #include "Modules/ModuleManager.h"
 
-class FNiComponentConfigurator;
+class FNiSceneBlockHandler;
 DV2_API DECLARE_LOG_CATEGORY_EXTERN(LogDV2, Display, Display)
 
 class FDV2Module : public IModuleInterface
@@ -16,13 +16,14 @@ public:
 
 	static FDV2Module& Get();
 
-	void RegisterNiComponentConfigurator(const FString& NiBlockName, const TSharedPtr<FNiComponentConfigurator>& Configurator);
-	const TMap<FString, TSharedPtr<FNiComponentConfigurator>>& GetNiComponentConfigurators() const { return NiComponentConfigurators; }
-
+	void RegisterNiSceneBlockHandler(const FString& NiBlockName, const TSharedPtr<FNiSceneBlockHandler>& Handler) { NiSceneBlockHandlers.Add(NiBlockName, Handler); }
+	void UnregisterNiSceneBlockHandler(const FString& NiBlockName) { NiSceneBlockHandlers.Remove(NiBlockName); }
+	const TMap<FString, TSharedPtr<FNiSceneBlockHandler>>& GetNiSceneBlockHandlers() const { return NiSceneBlockHandlers; }
+	
 	inline const static FString PluginName = TEXT("DV2");
 
 private:
 	void RegisterNiComponentConfigurators();
 	
-	TMap<FString, TSharedPtr<FNiComponentConfigurator>> NiComponentConfigurators;
+	TMap<FString, TSharedPtr<FNiSceneBlockHandler>> NiSceneBlockHandlers;
 };

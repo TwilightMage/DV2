@@ -4,6 +4,7 @@
 #include "CanvasTypes.h"
 #include "EngineUtils.h"
 #include "NetImmerse.h"
+#include "ProceduralMeshComponent.h"
 
 FNifViewportClient::FNifViewportClient(const TSharedPtr<FPreviewScene>& InScene, const TSharedPtr<SNifSceneViewport>& Widget)
 	: FEditorViewportClient(nullptr, InScene.Get(), Widget)
@@ -30,9 +31,9 @@ FNifViewportClient::FNifViewportClient(const TSharedPtr<FPreviewScene>& InScene,
 		);
 }
 
-struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
+struct FViewportSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 {
-	FSceneSpawnHandler(FNifViewportClient* InViewportClient, TMap<TSharedPtr<FNiBlock>, USceneComponent*>& InBlockToComponentMap)
+	FViewportSceneSpawnHandler(FNifViewportClient* InViewportClient, TMap<TSharedPtr<FNiBlock>, USceneComponent*>& InBlockToComponentMap)
 		: ViewportClient(InViewportClient)
 		  , BlockToComponentMap(InBlockToComponentMap)
 	{
@@ -42,8 +43,9 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 	{
 		TSharedPtr<FNiBlock> Block;
 		TSharedPtr<FNiBlock> ParentBlock;
-		USceneComponent* Component;
-		TArray<USceneComponent*> SubComponents;
+
+		FTransform RelativeTransform;
+		TArray<TSharedPtr<FNiFile::FMeshDescriptor>> Meshes;
 	} Current;
 
 	FNifViewportClient* ViewportClient;
@@ -51,15 +53,14 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 
 	virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
 	{
-		auto Component = ViewportClient->SpawnComponent<USceneComponent>();
-		Component->SetMobility(EComponentMobility::Static);
-		Component->Rename(*FString::Printf(TEXT("BLOCK_%d"), Block->BlockIndex));
-		Component.FinishSpawn();
+		auto Result = FSceneSpawnHandler::OnEnterBlock(Block, ParentBlock);
+		if (Result != EBlockEnterResult::Continue)
+			return Result;
 
 		Current.Block = Block;
 		Current.ParentBlock = ParentBlock;
-		Current.Component = Component;
-		Current.SubComponents.Reset();
+		Current.RelativeTransform = FTransform::Identity;
+		Current.Meshes.Reset();
 
 		return EBlockEnterResult::Continue;
 	}
@@ -68,41 +69,46 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 	{
 		if (bSuccess)
 		{
+			auto SceneComponent = NewObject<USceneComponent>(GetWCO());
+			SceneComponent->SetRelativeTransform(Current.RelativeTransform);
+			SceneComponent->SetMobility(EComponentMobility::Static);
+			//SceneComponent->Rename(*FString::Printf(TEXT("BLOCK_%d"), Block->BlockIndex));
+
 			if (Current.ParentBlock.IsValid())
-				Current.Component->AttachToComponent(BlockToComponentMap[Current.ParentBlock], FAttachmentTransformRules::KeepRelativeTransform);
+				SceneComponent->AttachToComponent(BlockToComponentMap[Current.ParentBlock], FAttachmentTransformRules::KeepRelativeTransform);
+			
+			ViewportClient->GetPreviewScene()->AddComponent(SceneComponent, FTransform::Identity);
+			ViewportClient->GeneratedNifComponents.Add(SceneComponent);
+			
+			ViewportClient->BlockToComponentMap.Add(Current.Block, SceneComponent);
+			ViewportClient->ComponentToBlockMap.Add(SceneComponent, Current.Block);
 
-			ViewportClient->BlockToComponentMap.Add(Current.Block, Current.Component);
-			ViewportClient->ComponentToBlockMap.Add(Current.Component, Current.Block);
-
-			for (auto SubComponent : Current.SubComponents)
+			for (const auto& Mesh : Current.Meshes)
 			{
-				SubComponent->AttachToComponent(Current.Component, FAttachmentTransformRules::KeepRelativeTransform);
-				ViewportClient->GetPreviewScene()->AddComponent(SubComponent, FTransform::Identity);
+				auto MeshComponent = NewObject<UProceduralMeshComponent>(GetWCO());
+				MeshComponent->SetMobility(EComponentMobility::Static);
+				MeshComponent->AttachToComponent(SceneComponent, FAttachmentTransformRules::SnapToTargetIncludingScale);
+				MeshComponent->CastShadow = true;
 
-				TArray<USceneComponent*> InnerSubComponents;
-				SubComponent->GetChildrenComponents(true, InnerSubComponents);
-				for (auto InnerSubComponent : InnerSubComponents)
-					ViewportClient->GetPreviewScene()->AddComponent(InnerSubComponent, FTransform::Identity);
+				Mesh->AddSectionToProceduralMeshComponent(MeshComponent);
+				
+				ViewportClient->GetPreviewScene()->AddComponent(MeshComponent, FTransform::Identity);
+				ViewportClient->GeneratedNifComponents.Add(MeshComponent);
 			}
 
 			if (!ViewportClient->SceneRoot)
-				ViewportClient->SceneRoot = Current.Component;
-		}
-		else
-		{
-			ViewportClient->GetPreviewScene()->RemoveComponent(Current.Component);
-			ViewportClient->GeneratedNifComponents.Remove(Current.Component);
+				ViewportClient->SceneRoot = SceneComponent;
 		}
 	}
 
-	virtual void OnAttachSubComponent(USceneComponent* SubComponent) override
+	virtual void OnAttachMesh(const FNiFile::FMeshDescriptor& Mesh) override
 	{
-		Current.SubComponents.Add(SubComponent);
+		Current.Meshes.Add(MakeShared<FNiFile::FMeshDescriptor>(Mesh));
 	}
 
 	virtual void OnSetComponentTransform(const FTransform& Transform) override
 	{
-		Current.Component->SetRelativeTransform(Transform);
+		Current.RelativeTransform = Transform;
 	}
 
 	virtual UObject* GetWCO() override
@@ -111,23 +117,22 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 	}
 };
 
-void FNifViewportClient::LoadNifFile(const TSharedPtr<FNiFile>& NifFile, uint32 RootBlockIndex)
+void FNifViewportClient::LoadNifFile(const TSharedPtr<FNiFile>& NifFile, uint32 RootBlockIndex, const FNiMask* Mask)
 {
 	Clear();
 
-	if (NifFile->Blocks.IsEmpty())
-		return;
-
-	FSceneSpawnHandler Handler(this, BlockToComponentMap);
-
-	NifFile->SpawnScene(&Handler, RootBlockIndex);
-
-	if (SceneRoot)
+	if (!NifFile->Blocks.IsEmpty())
 	{
-		SceneRoot->SetRelativeTransform(UseRootTransform);
+		FViewportSceneSpawnHandler Handler(this, BlockToComponentMap);
+		Handler.Mask = Mask;
+
+		NifFile->SpawnScene(&Handler, RootBlockIndex);
+
+		if (SceneRoot)
+			SceneRoot->SetRelativeTransform(UseRootTransform);	
 	}
 
-	Viewport->InvalidateHitProxy();
+	Viewport->Invalidate();
 }
 
 void FNifViewportClient::Draw(const FSceneView* View, FPrimitiveDrawInterface* PDI)

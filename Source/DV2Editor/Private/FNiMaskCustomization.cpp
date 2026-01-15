@@ -51,32 +51,10 @@ void FNiMaskCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> PropertyH
 						.MinDesiredWidth(280)
 						[
 							SNew(SNiOutliner, File)
-							.AddColumnsLeft({SNiOutliner::FColumn{
-									.Key = "Check",
-									.Title = FText::GetEmpty(),
-									.Width = 25}}
-								)
-							.GenerateCell_Lambda([PropertyHandle, &Mask](FString ColumnName, TSharedPtr<FNiBlock> Block) -> TSharedRef<SWidget>
+							.Mask(&Mask)
+							.OnMaskEdited_Lambda([PropertyHandle]
 							{
-								return SNew(SBox)
-									.HAlign(HAlign_Center)
-									.VAlign(VAlign_Center)
-									[
-										SNew(SImage)
-										.Image(FAppStyle::Get().GetBrush("Icons.Success"))
-										.ColorAndOpacity_Lambda([&Mask, Block]() -> FSlateColor
-										{
-											return Mask.ShouldShow(Block->BlockIndex)
-												? FLinearColor::White
-												: FLinearColor::Transparent;
-										})
-										.OnMouseButtonDown_Lambda([PropertyHandle, &Mask, Block](const FGeometry&, const FPointerEvent&) -> FReply
-										{
-											Mask.Toggle(Block->BlockIndex);
-											PropertyHandle->NotifyPostChange(EPropertyChangeType::ValueSet);
-											return FReply::Handled();
-										})
-									];
+								PropertyHandle->NotifyPostChange(EPropertyChangeType::ValueSet);
 							})
 						];
 				})

@@ -6,6 +6,8 @@
 
 void SNiOutliner::Construct(const FArguments& InArgs, const TSharedPtr<FNiFile>& InFile)
 {
+	Mask = InArgs._Mask;
+	OnMaskEdited = InArgs._OnMaskEdited;
 	GenerateCell = InArgs._GenerateCell;
 	OnSelectionChanged = InArgs._OnSelectionChanged;
 
@@ -20,8 +22,17 @@ void SNiOutliner::Construct(const FArguments& InArgs, const TSharedPtr<FNiFile>&
 
 		if (Column.Width > 0)
 			ColumnArgs.FixedWidth(Column.Width);
-		
+
 		HeaderRow->AddColumn(ColumnArgs);
+	}
+
+	if (Mask)
+	{
+		HeaderRow->AddColumn(
+			SHeaderRow::Column("Visibility")
+			.DefaultLabel(FText::GetEmpty())
+			.FixedWidth(25)
+			);
 	}
 
 	HeaderRow->AddColumn(
@@ -36,7 +47,7 @@ void SNiOutliner::Construct(const FArguments& InArgs, const TSharedPtr<FNiFile>&
 
 		if (Column.Width > 0)
 			ColumnArgs.FixedWidth(Column.Width);
-		
+
 		HeaderRow->AddColumn(ColumnArgs);
 	}
 
@@ -60,14 +71,21 @@ void SNiOutliner::Construct(const FArguments& InArgs, const TSharedPtr<FNiFile>&
 
 			FMenuBuilder MenuBuilder(true, nullptr);
 
-			if (SelectedBlock->Block->Type->BuildContextMenu.IsSet())
-				SelectedBlock->Block->Type->BuildContextMenu(MenuBuilder, File, SelectedBlock->Block);
+			auto Ty = SelectedBlock->Block->Type;
+			while (Ty.IsValid())
+			{
+				if (Ty->BuildContextMenu.IsSet())
+					Ty->BuildContextMenu(MenuBuilder, File, SelectedBlock->Block);
+				Ty = Ty->inherit;
+			}
 
 			return MenuBuilder.MakeWidget();
 		})
 		.OnGenerateRow_Lambda([this](const TSharedPtr<FBlockWrapper>& Entry, const TSharedRef<STableViewBase>& Owner)
 		{
 			return SNew(SNiOutlinerRow, Owner, Entry, File)
+				.Mask(Mask)
+				.OnMaskEdited(OnMaskEdited)
 				.GenerateCell(GenerateCell);
 		})
 		.OnRowReleased_Lambda([](const TSharedRef<ITableRow>& Row)
@@ -134,6 +152,8 @@ void SNiOutliner::FBlockWrapper::GetChildren(TArray<TSharedPtr<FBlockWrapper>>& 
 
 void SNiOutlinerRow::Construct(const FArguments& InArgs, const TSharedRef<STableViewBase>& InOwner, const TSharedPtr<SNiOutliner::FBlockWrapper>& InTarget, const TSharedPtr<FNiFile>& InFile)
 {
+	Mask = InArgs._Mask;
+	OnMaskEdited = InArgs._OnMaskEdited;
 	GenerateCell = InArgs._GenerateCell;
 
 	Target = InTarget;
@@ -144,6 +164,9 @@ void SNiOutlinerRow::Construct(const FArguments& InArgs, const TSharedRef<STable
 
 TSharedRef<SWidget> SNiOutlinerRow::GenerateWidgetForColumn(const FName& InColumnName)
 {
+	if (InColumnName == "Visibility")
+		return GenerateVisibilityCell();
+
 	if (InColumnName == "Main")
 		return GenerateMainCell();
 
@@ -151,6 +174,32 @@ TSharedRef<SWidget> SNiOutlinerRow::GenerateWidgetForColumn(const FName& InColum
 		return GenerateCell.Execute(InColumnName.ToString(), Target->Block);
 
 	return SNullWidget::NullWidget;
+}
+
+TSharedRef<SWidget> SNiOutlinerRow::GenerateVisibilityCell()
+{
+	if (!Target->Block->IsChildOfType("NiAVObject"))
+		return SNullWidget::NullWidget;
+
+	return SNew(SBox)
+		.HAlign(HAlign_Center)
+		.VAlign(VAlign_Center)
+		[
+			SNew(SImage)
+			.Image(FAppStyle::Get().GetBrush("Level.VisibleIcon16x"))
+			.ColorAndOpacity_Lambda([this]() -> FSlateColor
+			{
+				return Mask->ShouldShow(Target->Block->BlockIndex)
+					? FLinearColor::White
+					: FLinearColor::Transparent;
+			})
+			.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent&) -> FReply
+			{
+				Mask->Toggle(Target->Block->BlockIndex);
+				OnMaskEdited.ExecuteIfBound();
+				return FReply::Handled();
+			})
+		];
 }
 
 TSharedRef<SWidget> SNiOutlinerRow::GenerateMainCell()

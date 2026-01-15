@@ -11,6 +11,7 @@ public class DV2Editor : ModuleRules
             {
                 "Core",
                 "UnrealEd",
+                "DV2",
             }
         );
 
@@ -21,13 +22,14 @@ public class DV2Editor : ModuleRules
                 "Engine",
                 "Slate",
                 "SlateCore",
-                "DV2",
                 "ToolMenus",
                 "InputCore",
                 "Projects",
                 "GraphEditor",
                 "BlueprintGraph",
                 "ToolWidgets",
+                "ProceduralMeshComponent",
+                "ImageWrapper",
             }
         );
     }

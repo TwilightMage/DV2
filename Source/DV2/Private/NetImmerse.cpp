@@ -2,13 +2,19 @@
 
 #include "DV2.h"
 #include "DV2AssetTree.h"
+#include "DesktopPlatformModule.h"
 #include "Divinity2Assets.h"
+#include "IDesktopPlatform.h"
+#include "ProceduralMeshComponent.h"
 #include "SourceCodeNavigation.h"
 #include "Containers/Deque.h"
+#include "DV2Importer/DV2Settings.h"
 #include "DV2Importer/unpack.h"
 #include "NiMeta/NiException.h"
 #include "NiMeta/NiMeta.h"
-#include "NiSceneComponents/NiComponentConfigurator.h"
+#include "NiSceneBlockHandlers/NiSceneBlockHandler.h"
+
+const FNiFile::FMaterialDescriptor FNiFile::FMaterialDescriptor::DefaultMaterial = {};
 
 FString NetImmerse::ReadStringNoSize(FMemoryReader& MemoryReader, uint32 SizeLimit)
 {
@@ -303,6 +309,110 @@ void FNiBlock::TraverseChildrenPrivate(const TFunction<bool(const TSharedPtr<FNi
 	}
 }
 
+bool FNiFile::FTextureDescriptor::IsSet() const
+{
+	return !Data.IsType<nullptr_t>();
+}
+
+UTexture2D* FNiFile::FTextureDescriptor::ResolveTexture() const
+{
+	if (Data.IsType<TTexturePtr>())
+		return Data.Get<TTexturePtr>().Get();
+	if (Data.IsType<TNiBlock>())
+		return UNetImmerse::LoadNiTexture(Data.Get<TNiBlock>().AssetPath, Data.Get<TNiBlock>().BlockIndex);
+	if (Data.IsType<TAssetPath>())
+		return nullptr;
+	return nullptr;
+}
+
+FNiFile::FTextureDescriptor FNiFile::FTextureDescriptor::CreateFromTexture(UTexture2D* Texture)
+{
+	FTextureDescriptor Result;
+	Result.Data.Emplace<TTexturePtr>(Texture);
+	return Result;
+}
+
+FNiFile::FTextureDescriptor FNiFile::FTextureDescriptor::CreateFromNiBlock(const FString& AssetPath, uint32 BlockIndex)
+{
+	FTextureDescriptor Result;
+	Result.Data.Emplace<TNiBlock>(AssetPath, BlockIndex);
+	return Result;
+}
+
+FNiFile::FTextureDescriptor FNiFile::FTextureDescriptor::CreateFromAssetPath(const FString& AssetPath)
+{
+	FTextureDescriptor Result;
+	Result.Data.Emplace<TAssetPath>(AssetPath);
+	return Result;
+}
+
+bool FNiFile::FTextureDescriptor::operator==(const FTextureDescriptor& Rhs) const
+{
+	if (Data.GetIndex() != Rhs.Data.GetIndex())
+		return false;
+
+	if (Data.IsType<TTexturePtr>())
+		return Data.Get<TTexturePtr>() == Rhs.Data.Get<TTexturePtr>();
+	if (Data.IsType<TNiBlock>())
+		return Data.Get<TNiBlock>().AssetPath == Rhs.Data.Get<TNiBlock>().AssetPath && Data.Get<TNiBlock>().BlockIndex == Rhs.Data.Get<TNiBlock>().BlockIndex;
+	if (Data.IsType<TAssetPath>())
+		return Data.Get<TAssetPath>() == Rhs.Data.Get<TAssetPath>();
+	return true;
+}
+
+bool FNiFile::FMaterialDescriptor::operator==(const FMaterialDescriptor& Rhs) const
+{
+	return
+		DiffuseColor == Rhs.DiffuseColor &&
+		EmissiveColor == Rhs.EmissiveColor &&
+		Glossiness == Rhs.Glossiness &&
+		DiffuseTexture == Rhs.DiffuseTexture &&
+		GlossinessTexture == Rhs.GlossinessTexture &&
+		NormalTexture == Rhs.NormalTexture;
+}
+
+bool FNiFile::FMeshDescriptor::CheckValid() const
+{
+	return
+		(Normals.Num() == Vertices.Num() || Normals.Num() == 0) &&
+		(Tangents.Num() == Vertices.Num() || Tangents.Num() == 0) &&
+		(UVs[0].Num() == Vertices.Num() || UVs[0].Num() == 0) &&
+		(UVs[1].Num() == Vertices.Num() || UVs[1].Num() == 0) &&
+		(UVs[2].Num() == Vertices.Num() || UVs[2].Num() == 0) &&
+		(UVs[3].Num() == Vertices.Num() || UVs[3].Num() == 0) &&
+		Triangles.Num() % 3 == 0;
+}
+
+void FNiFile::FMeshDescriptor::AddSectionToProceduralMeshComponent(UProceduralMeshComponent* PMC) const
+{
+	int32 SectionIndex = PMC->GetNumSections();
+	PMC->CreateMeshSection(SectionIndex, Vertices, Triangles, Normals, UVs[0], UVs[1], UVs[2], UVs[2], {}, {}, true);
+	PMC->UpdateBounds();
+
+	if (Material != FMaterialDescriptor::DefaultMaterial)
+	{
+		if (auto BaseMaterial = GetDefault<UDV2Settings>()->BaseMaterial.LoadSynchronous())
+		{
+			auto BaseMaterialInstance = UMaterialInstanceDynamic::Create(BaseMaterial, PMC);
+
+			BaseMaterialInstance->SetVectorParameterValue("Diffuse Color", Material.DiffuseColor);
+			BaseMaterialInstance->SetVectorParameterValue("Emissive Color", Material.EmissiveColor);
+			BaseMaterialInstance->SetScalarParameterValue("Glossiness", Material.Glossiness);
+
+			if (Material.DiffuseTexture.IsSet())
+				BaseMaterialInstance->SetTextureParameterValue("Diffuse Texture", Material.DiffuseTexture.ResolveTexture());
+
+			if (Material.GlossinessTexture.IsSet())
+				BaseMaterialInstance->SetTextureParameterValue("Glossiness Texture", Material.GlossinessTexture.ResolveTexture());
+
+			if (Material.NormalTexture.IsSet())
+				BaseMaterialInstance->SetTextureParameterValue("Normal Texture", Material.NormalTexture.ResolveTexture());
+
+			PMC->SetMaterial(SectionIndex, BaseMaterialInstance);
+		}
+	}
+}
+
 bool FNiFile::ReadFrom(FMemoryReader& memoryReader)
 {
 	VersionString = "";
@@ -447,7 +557,7 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler, uint32 RootBlockIndex)
 {
 	struct BlockComponentConfig
 	{
-		TDeque<TSharedPtr<FNiComponentConfigurator>> Configurators;
+		TDeque<TSharedPtr<FNiSceneBlockHandler>> Handlers;
 	};
 
 	TMap<TSharedPtr<NiMeta::niobject>, BlockComponentConfig> BlockComponentConfigs;
@@ -460,9 +570,9 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler, uint32 RootBlockIndex)
 		TSharedPtr<NiMeta::niobject> BT = BlockType;
 		while (BT.IsValid())
 		{
-			if (BT->ComponentConfigurator.IsValid())
+			if (BT->SceneHandler.IsValid())
 			{
-				Config.Configurators.PushFirst(BT->ComponentConfigurator);
+				Config.Handlers.PushFirst(BT->SceneHandler);
 			}
 
 			BT = BT->inherit;
@@ -491,20 +601,20 @@ void FNiFile::SpawnScene(FSceneSpawnHandler* Handler, uint32 RootBlockIndex)
 			return false;
 		}
 
-		FSceneSpawnConfiguratorContext Ctx;
+		FSceneSpawnHandlerContext Ctx;
 		Ctx.Block = Block;
 		Ctx.WCO = Handler->GetWCO();
-		Ctx.Callbacks.OnAttachComponent = [&](USceneComponent* SubComponent)
+		Ctx.Callbacks.OnAttachMesh = [&](const FMeshDescriptor& Mesh)
 		{
-			Handler->OnAttachSubComponent(SubComponent);
+			Handler->OnAttachMesh(Mesh);
 		};
 		Ctx.Callbacks.OnSetTransform = [&](const FTransform& Transform)
 		{
 			Handler->OnSetComponentTransform(Transform);
 		};
 
-		for (auto Configurator : Config.Configurators)
-			if (!Configurator->Configure(*this, Ctx))
+		for (const auto& BlockHandler : Config.Handlers)
+			if (!BlockHandler->Handle(*this, Ctx))
 			{
 				Handler->OnExitBlock(false);
 				return false;
@@ -557,7 +667,7 @@ TSharedPtr<FNiFile> UNetImmerse::OpenNiFile(const TSharedPtr<FDV2AssetTreeEntry>
 	return nullptr;
 }
 
-UTexture2D* UNetImmerse::LoadNiTexture(const FString& FilePath, int32 BlockIndex, bool ForceLoadFile)
+UTexture2D* UNetImmerse::LoadNiTexture(const FString& FilePath, int32 BlockIndex)
 {
 	auto FixedFilePath = FixPath(FilePath);
 	auto NI = GetMutableDefault<UNetImmerse>();
@@ -575,7 +685,7 @@ UTexture2D* UNetImmerse::LoadNiTexture(const FString& FilePath, int32 BlockIndex
 		ActualFilePath = FixedFilePath.Mid(0, FixedFilePath.Len() - 4) + ".nif";
 	}
 
-	if (auto File = OpenNiFile(ActualFilePath, ForceLoadFile); File.IsValid())
+	if (auto File = OpenNiFile(ActualFilePath, true); File.IsValid())
 	{
 		if (BlockIndex >= File->Blocks.Num())
 			return nullptr;
@@ -590,7 +700,7 @@ UTexture2D* UNetImmerse::LoadNiTexture(const FString& FilePath, int32 BlockIndex
 			{
 				FString TextureName = Block->ToStringAt("File Name", *File);
 				FString TexturePath = "Win32/Textures/" + TextureName;
-				return LoadNiTexture(TexturePath, 0, ForceLoadFile);
+				return LoadNiTexture(TexturePath, 0);
 			}
 			else
 			{
@@ -684,4 +794,135 @@ UTexture2D* UNetImmerse::LoadNiTexture(const FString& FilePath, int32 BlockIndex
 	}
 
 	return nullptr;
+}
+
+struct FExportObjHandlerData
+{
+	FString Name;
+	TSharedPtr<FNiFile::FMeshDescriptor> Mesh;
+};
+
+struct FExportObjHandler : FVirtualNiSceneSpawnHandler<FExportObjHandlerData>
+{
+	FNiFile* File;
+	TFunction<void(const FString& Str)> Print;
+
+	uint32 VertexAccum = 0;
+
+	virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
+	{
+		auto Result = FVirtualNiSceneSpawnHandler::OnEnterBlock(Block, ParentBlock);
+		if (Result != EBlockEnterResult::Continue)
+			return Result;
+
+		auto Title = Block->GetTitle(*File);
+		Current.Node->Data.Name = Title.IsEmpty() ? FString::Printf(TEXT("BLOCK_%d"), Block->BlockIndex) : Title;
+
+		return EBlockEnterResult::Continue;
+	}
+
+	virtual void OnAttachMesh(const FNiFile::FMeshDescriptor& Mesh) override
+	{
+		Current.Node->Data.Mesh = MakeShared<FNiFile::FMeshDescriptor>(Mesh);
+	}
+
+	virtual UObject* GetWCO() override
+	{
+		return nullptr;
+	}
+
+	virtual void OnFinalizeNode(HierarchyNode& Node) override
+	{
+		if (Node.Data.Mesh.IsValid())
+		{
+			Print(FString::Printf(TEXT("o %s\n"), *Node.Data.Name));
+
+			for (const auto& Vertex : Node.Data.Mesh->Vertices)
+			{
+				auto GlobalVertex = Node.GlobalTransform.TransformPosition(Vertex);
+				Print(FString::Printf(TEXT("v %f %f %f\n"), GlobalVertex.X, GlobalVertex.Y, GlobalVertex.Z));
+			}
+
+			for (const auto& Normal : Node.Data.Mesh->Normals)
+			{
+				auto GlobalNormal = Node.GlobalTransform.TransformVector(Normal);
+				Print(FString::Printf(TEXT("vn %f %f %f\n"), GlobalNormal.X, GlobalNormal.Y, GlobalNormal.Z));
+			}
+
+			for (const auto& UV : Node.Data.Mesh->UVs[0])
+			{
+				Print(FString::Printf(TEXT("vt %f %f\n"), UV.X, UV.Y));
+			}
+
+			for (int32 i = 0; i < Node.Data.Mesh->Triangles.Num(); i += 3)
+			{
+				uint32 i0 = VertexAccum + Node.Data.Mesh->Triangles[i + 0] + 1;
+				uint32 i1 = VertexAccum + Node.Data.Mesh->Triangles[i + 1] + 1;
+				uint32 i2 = VertexAccum + Node.Data.Mesh->Triangles[i + 2] + 1;
+				Print(FString::Printf(TEXT("f %d/%d/%d %d/%d/%d %d/%d/%d\n"),
+				                      i0, i0, i0,
+				                      i1, i1, i1,
+				                      i2, i2, i2
+					));
+			}
+
+			Print("\n");
+
+			VertexAccum += Node.Data.Mesh->Vertices.Num();
+		}
+	}
+};
+
+void UNetImmerse::ExportScene(const FString& FilePath, int32 BlockIndex, const FString& DiskPath)
+{
+	auto File = OpenNiFile(FilePath, true);
+	if (!File.IsValid())
+		return;
+
+	FArchive* FileWriter = IFileManager::Get().CreateFileWriter(*DiskPath);
+
+	TFunction<void(const FString& Str)> Print = [FileWriter](const FString& Str)
+	{
+		FTCHARToUTF8 Converter(*Str, Str.Len());
+		FileWriter->Serialize((UTF8CHAR*)Converter.Get(), Converter.Length());
+	};
+
+	FExportObjHandler Handler;
+	Handler.File = File.Get();
+	Handler.Print = Print;
+	File->SpawnScene(&Handler, BlockIndex);
+	Handler.Finalize();
+
+	FileWriter->Close();
+	delete FileWriter;
+}
+
+void UNetImmerse::ExportSceneWithWizard(const FString& FilePath, int32 BlockIndex)
+{
+	auto Asset = UDivinity2Assets::GetAssetEntryFromPath(FilePath);
+	if (!Asset.IsValid())
+		return;
+	
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (!DesktopPlatform)
+		return;
+	
+	TArray<FString> OutFilenames;
+	FString FileTypes = TEXT("OBJ Files (*.obj)|*.obj");
+
+	if (!DesktopPlatform->SaveFileDialog(
+		nullptr,
+		TEXT("Export Model"),
+		TEXT(""),
+		FPaths::ChangeExtension(Asset->Name, "obj"),
+		FileTypes,
+		EFileDialogFlags::None,
+		OutFilenames
+		))
+		return;
+
+	if (OutFilenames.Num() != 1)
+		return;
+
+	ExportScene(FilePath, BlockIndex, OutFilenames[0]);
 }

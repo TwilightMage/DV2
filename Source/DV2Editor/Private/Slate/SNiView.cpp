@@ -68,9 +68,12 @@ void SNiView::OnConstructView(const TSharedPtr<FDV2AssetTreeEntry>& InAsset)
 TSharedRef<SWidget> SNiView::MakeOutlinerWidget()
 {
 	return SAssignNew(NiOutliner, SNiOutliner, File)
+		.Mask(GetMask())
+		.OnMaskEdited(this, &SNiView::OnMaskEdited)
 		.OnSelectionChanged_Lambda([this](const TSharedPtr<FNiBlock>& InBlock)
 		{
 			SelectedBlock = InBlock;
+			OnSelectedBlockChanged(InBlock);
 			NiBlockInspector->SetTargetBlock(InBlock);
 		});
 }

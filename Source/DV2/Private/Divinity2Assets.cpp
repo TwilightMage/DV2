@@ -117,6 +117,18 @@ bool UDivinity2Assets::PathExists(const FString& Path)
 	return GetAssetEntryFromPath(Path).IsValid();
 }
 
+bool UDivinity2Assets::FileExists(const FString& Path)
+{
+	auto Asset = GetAssetEntryFromPath(Path);
+	return Asset.IsValid() && Asset->IsFile();
+}
+
+bool UDivinity2Assets::DirExists(const FString& Path)
+{
+	auto Asset = GetAssetEntryFromPath(Path);
+	return Asset.IsValid() && !Asset->IsFile();
+}
+
 TArray<FString> UDivinity2Assets::GetPathChildren(const FString& Path)
 {
 	if (auto Entry = GetAssetEntryFromPath(Path))

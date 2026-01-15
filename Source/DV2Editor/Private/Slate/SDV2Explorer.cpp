@@ -106,11 +106,7 @@ void SDV2Explorer::Construct(const FArguments& InArgs)
 				}
 				MenuBuilder.EndSection();
 
-				FString Extension = FPaths::GetExtension(Selection[0]->Name);
-				if (auto Handler = FDV2EditorModule::Get().GetFileHandler(Extension); Handler.IsValid())
-				{
-					Handler->ConfigureMenu(Selection[0], MenuBuilder);
-				}
+				FDV2EditorModule::Get().GenerateContextmenuForAsset(MenuBuilder, Selection[0]);
 
 				return MenuBuilder.MakeWidget();
 			})

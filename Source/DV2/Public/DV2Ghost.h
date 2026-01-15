@@ -4,41 +4,14 @@
 
 #include "CoreMinimal.h"
 #include "LandscapeEditLayerRenderer.h"
+#include "NetImmerse.h"
 #include "GameFramework/Actor.h"
 #include "DV2Ghost.generated.h"
 
 struct FNiFile;
 
-USTRUCT()
-struct FNiMask
-{
-	GENERATED_BODY()
-
-	static FNiMask CreateBlack() { return FNiMask{.bIsWhiteList = true}; }
-	static FNiMask CreateWhite() { return FNiMask{.bIsWhiteList = false}; }
-
-	bool ShouldShow(uint32 InBlockIndex) const
-	{
-		return bIsWhiteList
-			? BlockIndexList.Contains(InBlockIndex)
-			: !BlockIndexList.Contains(InBlockIndex);
-	}
-
-	void Toggle(uint32 InBlockIndex)
-	{
-		if (BlockIndexList.Remove(InBlockIndex) == 0)
-			BlockIndexList.Add(InBlockIndex);
-	}
-
-	UPROPERTY()
-	TSet<uint32> BlockIndexList;
-
-	UPROPERTY()
-	bool bIsWhiteList;
-};
-
 /**
- * Use this actor to spawn NIF scenes UE world
+ * Use this actor to spawn NIF scenes in UE world
  */
 UCLASS(DisplayName="DV2 Ghost Component", ClassGroup="Divinity 2", meta=(BlueprintSpawnableComponent))
 class DV2_API UDV2GhostComponent : public USceneComponent
@@ -46,6 +19,7 @@ class DV2_API UDV2GhostComponent : public USceneComponent
 	GENERATED_BODY()
 
 	friend class FDV2AssetPathCustomization;
+	friend struct FGhostSceneSpawnHandler;
 
 public:
 	DECLARE_MULTICAST_DELEGATE(FOnFileChanged);
@@ -68,8 +42,8 @@ public:
 private:
 	virtual void PostLoad() override;
 
-	void AddFileSubComponents();
-	void ClearFileSubComponents();
+	void AddFileComponents();
+	void ClearSpawnedComponents();
 	void SetFilePrivate(const FString& InFilePath);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="DV2 Ghost Component", meta=(DV2AssetPath="dir, file", AllowPrivateAccess))
@@ -78,6 +52,9 @@ private:
 
 	UPROPERTY(EditAnywhere, Category="DV2 Ghost Component", meta=(AssetProperty=FilePath))
 	FNiMask ShowMask = FNiMask::CreateWhite();
+
+	UPROPERTY(Transient)
+	TArray<USceneComponent*> SpawnedComponents;
 };
 
 UCLASS(DisplayName="DV2 Ghost Actor", ConversionRoot, ComponentWrapperClass)

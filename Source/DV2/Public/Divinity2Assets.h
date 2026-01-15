@@ -59,6 +59,12 @@ public:
 	static bool PathExists(const FString& Path);
 
 	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")
+	static bool FileExists(const FString& Path);
+
+	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")
+	static bool DirExists(const FString& Path);
+
+	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")
 	static TArray<FString> GetPathChildren(const FString& Path);
 
 	UFUNCTION(BlueprintPure, Category="Divinity 2|Assets")

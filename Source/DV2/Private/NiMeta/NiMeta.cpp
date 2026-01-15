@@ -1,6 +1,5 @@
 ﻿#include "NiMeta/NiMeta.h"
 
-#include "FastXml.h"
 #include "NetImmerse.h"
 #include "SourceCodeNavigation.h"
 #include "Containers/Deque.h"
@@ -8,7 +7,6 @@
 #include "NiMeta/NiException.h"
 #include "NiMeta/Patch.h"
 #include "NiMeta/XmlParser.h"
-#include "NiSceneComponents/NiComponentConfigurator.h"
 
 FString ExpandTokens(const FString& str, const TFunction<FString(const FString& token)>& fallbackTokenResolver = nullptr)
 {
@@ -1365,11 +1363,11 @@ namespace NiMeta
 			Field->type = ResolveTemplatedType(Field->type, FieldTypeByName(Field->templateType));
 		}
 
-		for (const auto& Entry : FDV2Module::Get().GetNiComponentConfigurators())
+		for (const auto& Entry : FDV2Module::Get().GetNiSceneBlockHandlers())
 		{
 			if (auto BlockType = FindNiObject(Entry.Key); BlockType.IsValid())
 			{
-				BlockType->ComponentConfigurator = Entry.Value;
+				BlockType->SceneHandler = Entry.Value;
 			}
 		}
 

@@ -1,10 +1,10 @@
 ﻿// Fill out your copyright notice in the Description page of Project Settings.
 
-#include "NiSceneComponents/NiAVObjectComponentConfigurator.h"
+#include "NiSceneBlockHandlers/NiAVObjectHandler.h"
 
 #include "NiMeta/NiTools.h"
 
-bool FNiAVObjectComponentConfigurator::Configure(const FNiFile& File, const FNiFile::FSceneSpawnConfiguratorContext& Ctx)
+bool FNiAVObjectHandler::Handle(const FNiFile& File, const FNiFile::FSceneSpawnHandlerContext& Ctx)
 {
 	FVector Translation = NiTools::ReadVector3(Ctx.Block->GetField("Translation"));
 	FRotator Rotation = NiTools::ReadRotator(Ctx.Block->GetField("Rotation"));

@@ -4,6 +4,7 @@
 
 #include "Divinity2Assets.h"
 #include "NetImmerse.h"
+#include "ProceduralMeshComponent.h"
 
 void UDV2GhostComponent::SetFile(const FString& InFilePath)
 {
@@ -49,65 +50,23 @@ void UDV2GhostComponent::PostLoad()
 	SetFilePrivate(FilePath);
 }
 
-struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
+struct FSceneSpawnHandlerData
+{
+	TArray<USceneComponent*> SubComponents;
+};
+
+struct FGhostSceneSpawnHandler : FVirtualNiSceneSpawnHandler<FSceneSpawnHandlerData>
 {
 	UDV2GhostComponent* Ghost;
 
-	struct HierarchyNode
+	virtual void OnAttachMesh(const FNiFile::FMeshDescriptor& Mesh) override
 	{
-		FTransform RelativeTransform;
-		FTransform GlobalTransform;
-		TArray<TSharedPtr<HierarchyNode>> Children;
-		TArray<USceneComponent*> SubComponents;
-	};
+		auto MeshComponent = NewObject<UProceduralMeshComponent>(GetWCO());
+		MeshComponent->CastShadow = true;
 
-	TSharedPtr<HierarchyNode> RootNode;
-	TMap<TSharedPtr<FNiBlock>, TSharedPtr<HierarchyNode>> BlockToNodeMap;
+		Mesh.AddSectionToProceduralMeshComponent(MeshComponent);
 
-	struct
-	{
-		TSharedPtr<FNiBlock> Block;
-		TSharedPtr<FNiBlock> ParentBlock;
-		TSharedPtr<HierarchyNode> Node;
-	} Current;
-
-	virtual EBlockEnterResult OnEnterBlock(const TSharedPtr<FNiBlock>& Block, const TSharedPtr<FNiBlock>& ParentBlock) override
-	{
-		if (!Ghost->GetShowMask().ShouldShow(Block->BlockIndex))
-			return EBlockEnterResult::SkipThis;
-
-		Current.Block = Block;
-		Current.ParentBlock = ParentBlock;
-		Current.Node = MakeShared<HierarchyNode>();
-		Current.Node->Children.Reserve(Block->Children.Num());
-		return EBlockEnterResult::Continue;
-	}
-
-	virtual void OnExitBlock(bool bSuccess) override
-	{
-		if (bSuccess)
-		{
-			if (!RootNode.IsValid())
-				RootNode = Current.Node;
-
-			if (Current.ParentBlock.IsValid())
-				BlockToNodeMap[Current.ParentBlock]->Children.Add(Current.Node);
-
-			BlockToNodeMap.Add(Current.Block, Current.Node);
-		}
-	}
-
-	virtual void OnAttachSubComponent(USceneComponent* SubComponent) override
-	{
-		if (!SubComponent)
-			return;
-		
-		Current.Node->SubComponents.Add(SubComponent);
-	}
-
-	virtual void OnSetComponentTransform(const FTransform& Transform) override
-	{
-		Current.Node->RelativeTransform = Transform;
+		Current.Node->Data.SubComponents.Add(MeshComponent);
 	}
 
 	virtual UObject* GetWCO() override
@@ -115,42 +74,27 @@ struct FSceneSpawnHandler : FNiFile::FSceneSpawnHandler
 		return Ghost;
 	}
 
-	bool HasAnyObjects() const
+	virtual void OnFinalizeNode(HierarchyNode& Node) override
 	{
-		return RootNode.IsValid();
-	}
-
-	void CalculateTransforms(const TFunction<void(USceneComponent*)>& ComponentHandler)
-	{
-		CalculateTransform(*RootNode, nullptr, ComponentHandler);
-	}
-
-	static void CalculateTransform(HierarchyNode& Node, const FTransform* ParentTransform, const TFunction<void(USceneComponent*)>& ComponentHandler)
-	{
-		if (ParentTransform)
-			Node.GlobalTransform = Node.RelativeTransform * *ParentTransform;
-		else
-			Node.GlobalTransform = Node.RelativeTransform;
-
-		for (const auto& SubComponent : Node.SubComponents)
+		for (const auto& SubComponent : Node.Data.SubComponents)
 		{
-			auto SubComponentTransform = SubComponent->GetComponentTransform();
+			auto SubComponentTransform = SubComponent->GetRelativeTransform();
 			SubComponentTransform = SubComponentTransform * Node.GlobalTransform;
-			SubComponent->SetWorldTransform(SubComponentTransform);
-			ComponentHandler(SubComponent);
+			SubComponent->RegisterComponent();
+			SubComponent->AttachToComponent(Ghost, FAttachmentTransformRules::SnapToTargetIncludingScale);
+			SubComponent->SetRelativeTransform(SubComponentTransform);
+			Ghost->SpawnedComponents.Add(SubComponent);
 		}
-
-		for (auto& Child : Node.Children)
-			CalculateTransform(*Child, &Node.GlobalTransform, ComponentHandler);
 	}
 };
 
-void UDV2GhostComponent::AddFileSubComponents()
+void UDV2GhostComponent::AddFileComponents()
 {
 	if (!File.IsValid())
 		return;
 
-	FSceneSpawnHandler Handler;
+	FGhostSceneSpawnHandler Handler;
+	Handler.Mask = &ShowMask;
 	Handler.Ghost = this;
 	Handler.BlockToNodeMap.Reserve(File->Blocks.Num());
 
@@ -162,36 +106,30 @@ void UDV2GhostComponent::AddFileSubComponents()
 		RootScale.Y *= -1;
 		Handler.RootNode->RelativeTransform.SetScale3D(RootScale);
 		
-		Handler.CalculateTransforms([&](USceneComponent* SubComponent)
-		{
-			SubComponent->RegisterComponent();
-			SubComponent->AttachToComponent(this, FAttachmentTransformRules::KeepRelativeTransform);
-		});	
+		Handler.Finalize();
 	}
 }
 
-void UDV2GhostComponent::ClearFileSubComponents()
+void UDV2GhostComponent::ClearSpawnedComponents()
 {
-	TArray<USceneComponent*> SubComponents;
-	GetChildrenComponents(true, SubComponents);
-	for (USceneComponent* SubComponent : SubComponents)
+	for (USceneComponent* Component : SpawnedComponents)
 	{
-		if (!SubComponent)
+		if (!Component)
 			continue;
-		SubComponent->UnregisterComponent();
-		SubComponent->DestroyComponent();
+		Component->UnregisterComponent();
+		Component->DestroyComponent();
 	}
 }
 
 void UDV2GhostComponent::SetFilePrivate(const FString& InFilePath)
 {
-	ClearFileSubComponents();
+	ClearSpawnedComponents();
 
 	File = UNetImmerse::OpenNiFile(InFilePath, true);
 	if (!File.IsValid())
 		return;
 	
-	AddFileSubComponents();
+	AddFileComponents();
 }
 
 ADV2GhostActor::ADV2GhostActor()

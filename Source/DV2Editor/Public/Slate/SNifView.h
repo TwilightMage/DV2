@@ -18,5 +18,10 @@ private:
 	virtual TSharedPtr<SWidget> MakeViewportWidget(const TSharedPtr<FNiFile>& InFile) override;
 	virtual void OnSelectedBlockChanged(const TSharedPtr<FNiBlock>& Block) override;
 
+	virtual FNiMask* GetMask() override { return &Mask; }
+	virtual void OnMaskEdited() override;
+	
+	FNiMask Mask;
+	
 	TSharedPtr<SNifSceneViewport> NifSceneViewport;
 };

@@ -2,7 +2,7 @@
 #include "NiVersion.h"
 #include "Containers/Deque.h"
 
-class FNiComponentConfigurator;
+class FNiSceneBlockHandler;
 class FNiFieldStorage;
 class FNiFieldGroup;
 class FNiBlock;
@@ -301,7 +301,7 @@ namespace NiMeta
 		FString icon;
 		TArray<TSharedPtr<field>> fields;
 
-		TSharedPtr<FNiComponentConfigurator> ComponentConfigurator;
+		TSharedPtr<FNiSceneBlockHandler> SceneHandler;
 
 		TFunction<void(TSharedPtr<FNiBlock>& Block, FMemoryReader& Reader, const FNiFile& File)> CustomRead;
 		TFunction<void(FMenuBuilder& MenuBuilder, const TSharedPtr<FNiFile>& File, const TSharedPtr<FNiBlock>& Block)> BuildContextMenu;

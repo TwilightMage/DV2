@@ -1,5 +1,6 @@
 ﻿#include "DV2Editor.h"
 
+#include "AssetContextMenuGenerator.h"
 #include "BlueprintEditorModule.h"
 #include "DV2Browser.h"
 #include "DV2EditorCommands.h"
@@ -73,6 +74,8 @@ void FDV2EditorModule::StartupModule()
 	RegisterPropertyCustomizations();
 
 	RegisterFileHandlers();
+
+	RegisterAssetContextMenuGenerator(MakeShared<FDefaultAssetContextMenuGenerator>());
 }
 
 void FDV2EditorModule::ShutdownModule()
@@ -99,6 +102,12 @@ FDV2EditorModule& FDV2EditorModule::Get()
 TSharedPtr<FFileHandlerBase> FDV2EditorModule::GetFileHandler(const FString& Extension) const
 {
 	return FileHandlers.FindRef(Extension);
+}
+
+void FDV2EditorModule::GenerateContextmenuForAsset(FMenuBuilder& MenuBuilder, const TSharedPtr<FDV2AssetTreeEntry>& Asset)
+{
+	for (const auto& Generator : AssetContextMenuGenerators)
+		Generator->GenerateMenu(MenuBuilder, Asset);
 }
 
 void FDV2EditorModule::RegisterMenus()
